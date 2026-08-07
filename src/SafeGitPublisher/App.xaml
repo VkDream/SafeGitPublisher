@@ -1,0 +1,116 @@
+<Application x:Class="SafeGitPublisher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:SafeGitPublisher.Converters"
+             StartupUri="Views/MainWindow.xaml"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+
+            <!-- ============ 转换器 ============ -->
+            <conv:CheckStatusToColorConverter x:Key="StatusToColor" />
+            <conv:CheckStatusToGlyphConverter x:Key="StatusToGlyph" />
+            <conv:RiskToColorConverter x:Key="RiskToColor" />
+            <conv:RiskToGlyphConverter x:Key="RiskToGlyph" />
+            <conv:RiskToTextConverter x:Key="RiskToText" />
+            <conv:LogLevelToColorConverter x:Key="LogLevelToColor" />
+            <conv:SeverityToColorConverter x:Key="SeverityToColor" />
+            <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+            <conv:BoolToVisibilityConverter x:Key="InverseBoolToVis" Invert="True" />
+            <conv:StringNotEmptyToVisibilityConverter x:Key="StringToVis" />
+            <conv:StringFallbackConverter x:Key="StringFallback" />
+
+            <!-- ============ 画刷 ============ -->
+            <SolidColorBrush x:Key="PageBg" Color="#F5F6F8" />
+            <SolidColorBrush x:Key="CardBg" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CardBorder" Color="#DDE1E6" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#1565C0" />
+            <SolidColorBrush x:Key="TextPrimary" Color="#1F2328" />
+            <SolidColorBrush x:Key="TextSecondary" Color="#57606A" />
+            <SolidColorBrush x:Key="PassBrush" Color="#2E7D32" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#E65100" />
+            <SolidColorBrush x:Key="BlockedBrush" Color="#C62828" />
+
+            <!-- ============ 卡片样式 ============ -->
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource CardBg}" />
+                <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="12" />
+            </Style>
+
+            <!-- ============ 按钮样式 ============ -->
+            <Style x:Key="BaseButton" TargetType="Button">
+                <Setter Property="Padding" Value="12,5" />
+                <Setter Property="MinHeight" Value="30" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Opacity" Value="0.85" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="bd" Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+
+            <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                <Setter Property="Background" Value="White" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+                <Setter Property="BorderThickness" Value="1" />
+            </Style>
+
+            <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                <Setter Property="Background" Value="{StaticResource BlockedBrush}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+
+            <!-- ============ 文本框/输入框 ============ -->
+            <Style TargetType="TextBox">
+                <Setter Property="Padding" Value="6,4" />
+                <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <Style TargetType="ComboBox">
+                <Setter Property="Padding" Value="4,2" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <!-- ============ 分组标题 ============ -->
+            <Style x:Key="SectionTitle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                <Setter Property="Margin" Value="0,0,0,8" />
+            </Style>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

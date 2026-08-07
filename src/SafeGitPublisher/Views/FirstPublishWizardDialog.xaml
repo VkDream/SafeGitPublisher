@@ -1,0 +1,49 @@
+<Window x:Class="SafeGitPublisher.Views.FirstPublishWizardDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="首次发布向导" Width="680" Height="560" WindowStartupLocation="CenterOwner"
+        Background="{StaticResource PageBg}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource SectionTitle}" Text="首次发布向导" />
+        <TextBlock Grid.Row="1" Text="{Binding ProjectPath}" Foreground="{StaticResource TextSecondary}"
+                   TextWrapping="Wrap" Margin="0,0,0,12" />
+
+        <StackPanel Grid.Row="2" Margin="0,0,0,8">
+            <TextBlock Text="计划执行的动作（每一个都会明确展示并记录到日志）：" Foreground="{StaticResource TextSecondary}" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <CheckBox Content="1. 初始化 Git 仓库（git init -b main）" IsChecked="{Binding InitGit}" Margin="0,4" />
+                <CheckBox Content="2. 创建 / 补充 .gitignore（只追加推荐规则）" IsChecked="{Binding GenerateGitignore}" Margin="0,4" />
+                <CheckBox Content="3. 设置 Local Git 身份为推荐身份（修改 repository 范围内）" IsChecked="{Binding SetIdentity}" Margin="0,4" />
+                <TextBlock Text="4. 发布前安全检查（自动执行，不修改文件）" Margin="0,4" />
+                <TextBlock Text="5. 项目构建（自动执行，失败则阻断发布）" Margin="0,4" />
+                <TextBlock Text="6. 最终确认页（提交前展示全部检查结果）" Margin="0,4" />
+                <CheckBox Content="7. 配置 origin（下方输入 URL）" IsChecked="{Binding SetOrigin}" Margin="0,4" />
+                <TextBlock Text="8. Push（步骤 6 确认后执行）" Margin="0,4" />
+
+                <TextBlock Text="Commit Message" Margin="0,14,0,4" Foreground="{StaticResource TextSecondary}" />
+                <TextBox Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
+
+<StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <TextBlock Text="Origin URL" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding OriginUrl, UpdateSourceTrigger=PropertyChanged}" Width="380" Margin="8,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="90" Margin="0,0,10,0" Click="OnCancel" />
+            <Button Content="开始执行" Style="{StaticResource PrimaryButton}" Width="100" Click="OnStart" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,24 @@
+﻿
+# --- SafeGitPublisher 推荐规则（追加） ---
+[Bb]in/
+[Oo]bj/
+.vs/
+publish/
+tmp/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+.env
+.env.*
+secrets.json
+appsettings.Local.json
+*.pfx
+*.p12
+*.key
+*.pem
+.claude/
+.reasonix/
+*.log

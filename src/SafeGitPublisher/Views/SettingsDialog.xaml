@@ -1,0 +1,88 @@
+<Window x:Class="SafeGitPublisher.Views.SettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Icon="pack://application:,,,/SafeGitPublisher;component/Assets/SafeGitPublisher.ico"
+        Title="设置 — SafeGitPublisher" Width="620" Height="600" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="{StaticResource PageBg}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource SectionTitle}" Text="SafeGitPublisher 设置" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- ===== Git 身份 ===== -->
+                <GroupBox Header="Git 身份" Padding="10" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="推荐 Git 用户名" Foreground="{StaticResource TextSecondary}" />
+                        <TextBox Text="{Binding Settings.RecommendedGitName, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,10" />
+                        <TextBlock Text="推荐 Git 邮箱" Foreground="{StaticResource TextSecondary}" />
+                        <TextBox Text="{Binding Settings.RecommendedGitEmail, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ===== 大文件规则 ===== -->
+                <GroupBox Header="大文件规则（MB）" Padding="10" Margin="0,0,0,14">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="警告" Foreground="{StaticResource TextSecondary}" />
+                                <TextBox x:Name="WarnBox" Text="{Binding Settings.LargeFileWarningMB, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnThresholdChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="高危" Foreground="{StaticResource TextSecondary}" />
+                                <TextBox x:Name="HighBox" Text="{Binding Settings.LargeFileHighWarningMB, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnThresholdChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="阻断" Foreground="{StaticResource TextSecondary}" />
+                                <TextBox x:Name="BlockBox" Text="{Binding Settings.LargeFileBlockingMB, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnThresholdChanged" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="ThresholdErrorText" Margin="0,8,0,0" Foreground="{StaticResource BlockedBrush}"
+                                   FontSize="12" Text="要求 0 &lt; 警告 &lt; 高危 &lt; 阻断" Visibility="Collapsed" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ===== 发布行为 ===== -->
+                <GroupBox Header="发布行为" Padding="10" Margin="0,0,0,14">
+                    <StackPanel>
+                        <CheckBox Content="提交前执行 dotnet build" IsChecked="{Binding Settings.BuildBeforeCommit}" Margin="0,2" />
+                        <CheckBox Content="新增图片需要脱敏人工确认（未确认禁止 Push）" IsChecked="{Binding Settings.RequireImagePrivacyConfirmation}" Margin="0,2" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ===== 本地设置 ===== -->
+                <GroupBox Header="本地设置" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="设置文件位置：" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock x:Name="SettingsPathText" Foreground="{StaticResource TextPrimary}" FontSize="11"
+                                   Margin="0,2,0,0" TextWrapping="Wrap" ToolTip="{Binding SettingsPath}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="复制路径" Style="{StaticResource SecondaryButton}" Width="90" Height="26"
+                                    Margin="0,0,8,0" Click="OnCopyPath" />
+                            <Button Content="打开所在目录" Style="{StaticResource SecondaryButton}" Width="110" Height="26"
+                                    Click="OnOpenFolder" />
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="90" Margin="0,0,10,0" Click="OnCancel" />
+            <Button x:Name="SaveButton" Content="保存" Style="{StaticResource PrimaryButton}" Width="90" Click="OnSave" />
+        </StackPanel>
+    </Grid>
+</Window>

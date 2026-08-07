@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SafeGitPublisher/SafeGitPublisher.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SafeGitPublisher.E2E/SafeGitPublisher.E2E.csproj" />
+    <Project Path="tests/SafeGitPublisher.Tests/SafeGitPublisher.Tests.csproj" />
+  </Folder>
+</Solution>
