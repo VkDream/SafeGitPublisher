@@ -48,4 +48,13 @@ public sealed class BuildResult
 
     /// <summary>未执行构建时的原因（None/Skip/Ambiguous）。</summary>
     public string SkipReason { get; init; } = string.Empty;
+
+    /// <summary>构建模式：执行时为 "Isolated Temporary Output"（隔离临时输出）；未执行时为空。</summary>
+    public string BuildMode { get; init; } = string.Empty;
+
+    /// <summary>本次隔离构建使用的临时输出根（%TEMP%\SafeGitPublisher\PreflightBuild\&lt;GUID&gt;），供排错/测试断言。</summary>
+    public string? IsolationRoot { get; init; }
+
+    /// <summary>隔离目录清理是否失败（不影响构建成功判定，仅提示）。</summary>
+    public bool CleanupFailed { get; init; }
 }

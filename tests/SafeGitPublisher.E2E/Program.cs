@@ -398,6 +398,9 @@ public static class Scenarios
         E2EAssert.True(ctx.DotNetProject, "应识别为 .NET 项目");
         var build = ctx.Report.Checks.First(c => c.Id == "build");
         E2EAssert.True(build.Status == CheckStatus.Blocked, "build 失败应阻断发布");
+        E2EAssert.Equal("Isolated Temporary Output", ctx.Build!.BuildMode, "真实语法错误也必须走隔离构建（SELFBUILD-02，隔离不是假构建）");
+        E2EAssert.True(ctx.Build!.ExitCode != 0, "隔离构建失败时 ExitCode 必须非 0（SELFBUILD-02）");
+        E2EAssert.True(!ctx.Report.CanPush, "隔离构建失败必须阻断 Push（SELFBUILD-02）");
     }
 
     // ---------- 12) 作者身份不匹配 → 警告；修复后通过 ----------
@@ -491,6 +494,10 @@ public static class Scenarios
         E2EAssert.True(build.Status == CheckStatus.Pass, $"真实 .slnx 结构构建应通过（MSB1009 修复验证）：{build.Summary} {build.Details}");
         E2EAssert.Equal("MyApp.slnx", ctx.Build!.TargetDisplay, "Build Target 应展示为 .slnx 文件名");
         E2EAssert.True(ctx.Build!.CommandSummary.Contains("dotnet build MyApp.slnx", StringComparison.Ordinal), "命令摘要应含完整 build 目标");
+        E2EAssert.True(ctx.Build!.CommandSummary.Contains("隔离输出", StringComparison.Ordinal), "命令摘要应体现隔离输出（SELFBUILD-03）");
+        E2EAssert.Equal("Isolated Temporary Output", ctx.Build!.BuildMode, "Build Mode 必须为 Isolated Temporary Output（SELFBUILD-03）");
+        E2EAssert.True(!string.IsNullOrEmpty(ctx.Build!.IsolationRoot), "隔离构建必须记录临时根");
+        E2EAssert.True(!ctx.Build!.CleanupFailed, "隔离临时目录应清理成功");
         E2EAssert.True(ctx.Report.CanCommit, "构建通过且无敏感时允许提交");
     }
 
@@ -512,6 +519,8 @@ public static class Scenarios
         var ctx = await RunChecks(repo);
         var build = ctx.Report.Checks.First(c => c.Id == "build");
         E2EAssert.True(build.Status == CheckStatus.Pass, $"中文+空格路径构建应通过：{build.Summary} {build.Details}");
+        E2EAssert.Equal("Isolated Temporary Output", ctx.Build!.BuildMode, "中文+空格路径隔离构建模式（SELFBUILD-04）");
+        E2EAssert.True(ctx.Build!.Succeeded, "中文+空格路径隔离构建必须 PASS（SELFBUILD-04）");
     }
 
     // ---------- 17) 无 .NET 项目 → 跳过构建（BUILD-ROOT-05） ----------

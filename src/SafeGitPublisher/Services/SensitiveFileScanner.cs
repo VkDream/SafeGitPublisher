@@ -11,7 +11,7 @@ public static class SensitiveFileRules
     /// <summary>硬阻断：目录名（任意层级命中即阻断）。</summary>
     public static readonly string[] BlockedDirectoryNames =
     {
-        "bin", "obj", "publish", "tmp", ".vs", ".idea", ".claude", ".reasonix"
+        "bin", "obj", "publish", "tmp", ".vs", ".idea", ".claude", ".reasonix", ".serena"
     };
 
     /// <summary>硬阻断：文件名（精确或通配）。</summary>
@@ -103,7 +103,7 @@ public static class SensitiveFileRules
                         "publish" => "发布输出目录（publish）不应上传",
                         "tmp" => "临时目录（tmp）不应上传",
                         ".vs" or ".idea" => "IDE 元数据目录不应上传",
-                        ".claude" or ".reasonix" => "本机 AI 工具元数据不应上传",
+                        ".claude" or ".reasonix" or ".serena" => "本机 AI 工具元数据不应上传",
                         _ => "本地输出目录不应上传"
                     };
                 }

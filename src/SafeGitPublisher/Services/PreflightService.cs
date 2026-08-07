@@ -429,11 +429,33 @@ public sealed class PreflightService
         }
 
         // ---------- 11) 构建 ----------
-        ctx.DotNetProject = DotNetBuildService.IsDotNetProject(root);
-        if (ctx.DotNetProject)
+        // 合同（V1.0.0 self-host 缺陷修复后修正）：
+        // Build Gate 只针对“存在可提交变更”的发布候选。
+        // 0 个可提交变更 → 不存在即将 commit/push 的代码，无需执行发布前构建门禁。
+        // 这不等于 Build PASS，而是 Not Required / Skipped，原因写入 SkipReason。
+        var committableCount = changes.Count(c => !c.IsConflict);
+        if (committableCount == 0)
         {
+            ctx.DotNetProject = DotNetBuildService.IsDotNetProject(root);
+            ctx.Build = new BuildResult
+            {
+                BuildRun = false,
+                TargetKind = BuildTargetKind.None,
+                SkipReason = "当前无可提交变更（0 个可提交变更），跳过构建门禁（Not Required）。"
+            };
+            Add("build", "项目构建", CheckStatus.Info, "当前无可提交变更，跳过构建验证",
+                details: "当前不存在即将提交/推送的代码，因此无需执行发布前 Build Gate。");
+            log?.Invoke(LogLevel.Info, "当前无可提交变更，跳过构建验证");
+        }
+        else if (DotNetBuildService.IsDotNetProject(root))
+        {
+            ctx.DotNetProject = true;
             var build = await _buildService.BuildRepositoryAsync(root, !settings.BuildBeforeCommit, ct);
             ctx.Build = build;
+            if (build.CleanupFailed)
+            {
+                log?.Invoke(LogLevel.Warn, $"隔离构建临时目录清理失败（不影响构建结果）：{build.IsolationRoot}");
+            }
             if (build.TargetKind == BuildTargetKind.Ambiguous)
             {
                 // 合同：多候选且无法自动确定 → Warning + 需要用户明确选择，不猜测
@@ -466,7 +488,19 @@ public sealed class PreflightService
                         $"Build failed，禁止发布（{target}）",
                         blocksPush: true,
                         details: $"Target: {target}\nExit Code: {build.ExitCode}\n{err}");
-                    log?.Invoke(LogLevel.Blocked, $"dotnet build {target} 失败");
+                    // log 仅输出关键摘要（ExitCode + 前 3 条错误行，不刷大量构建输出）
+                    if (build.ErrorLines.Count > 0)
+                    {
+                        log?.Invoke(LogLevel.Blocked, $"dotnet build {target} 失败（ExitCode={build.ExitCode}）");
+                        foreach (var e in build.ErrorLines.Take(3))
+                        {
+                            log?.Invoke(LogLevel.Error, e);
+                        }
+                    }
+                    else
+                    {
+                        log?.Invoke(LogLevel.Blocked, $"dotnet build {target} 失败（ExitCode={build.ExitCode}）{build.Summary}");
+                    }
                 }
             }
             else
@@ -477,6 +511,7 @@ public sealed class PreflightService
         }
         else
         {
+            ctx.DotNetProject = false;
             Add("build", "项目构建", CheckStatus.Info, "非 .NET 项目，跳过构建");
             log?.Invoke(LogLevel.Info, "非 .NET 项目，跳过构建");
         }

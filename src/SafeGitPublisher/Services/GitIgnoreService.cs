@@ -35,6 +35,7 @@ public sealed class GitIgnoreService
         "*.pem",
         ".claude/",
         ".reasonix/",
+        ".serena/",
         "*.log"
     };
 

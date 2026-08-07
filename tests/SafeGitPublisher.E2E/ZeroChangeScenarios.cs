@@ -11,7 +11,9 @@ namespace SafeGitPublisher.E2E;
 /// ZERO-01/02/03：VM 层（UI 状态与按钮使能）；
 /// ZERO-04：workflow 层二次检查拦截（检查通过 → 外部还原为 0 变更 → 不得 add/commit/push）；
 /// ZERO-05：确认页按钮禁用（见单测 DialogSmokeTests.ConfirmDialog_ZeroChanges_ButtonDisabled）；
-/// ZERO-06：对照用例，1 变更正常提交不受影响。
+/// ZERO-06：对照用例，1 变更正常提交不受影响；
+/// ZERO-07：0 变更 + 必败 csproj → Build Gate 必须整体跳过（Not Required，不得 Blocked）；
+/// ZERO-08：成功 commit+push 后刷新 → 0 变更 → UP TO DATE（self-host 缺陷核心场景）。
 /// </summary>
 public static class ZeroChangeScenarios
 {
@@ -204,5 +206,91 @@ public static class ZeroChangeScenarios
 
         E2EAssert.True(result.Committed, "1 变更应正常提交");
         E2EAssert.True(!result.Informational, "正常流程不应标记 Informational");
+    }
+
+    // ---------- ZERO-07（self-host 缺陷回归核心）：0 变更 + .NET 仓库 → Build Gate 必须整体跳过 ----------
+    // 故意放置一个必然构建失败的 csproj：如果 0 变更时仍执行 dotnet build，
+    // 该仓库必然触发 Build Blocked → 本测试即失败，从而证明"跳过"真实生效。
+    [E2ETest]
+    public static async Task Z07_ZeroChanges_DotNetRepo_BuildGateSkipped()
+    {
+        var repo = await NewRepo("z07_buildskip");
+        await InitialCommit(repo);
+        var bare = await NewBareOrigin("z07_origin");
+        await AddRemote(repo, bare);
+
+        // 必败 csproj（引用不存在的包）：只要 build 被执行必然 ExitCode != 0
+        Write(repo, "BadApp/BadApp.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
+            "  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>\n" +
+            "  <ItemGroup><PackageReference Include=\"NoSuch.Package.999\" Version=\"9.9.9\" /></ItemGroup>\n" +
+            "</Project>\n");
+        var add = await Git.AddAllAsync(repo);
+        E2EAssert.True(add.Success, $"git add 失败：{add.StdErrText}");
+        var commit = await Git.CommitAsync(repo, "chore: add bad csproj");
+        E2EAssert.True(commit.Success, $"git commit 失败：{commit.StdErrText}");
+
+        var ctx = await NewPreflight().RunAsync(repo, new AppSettings(), log: null, imageConfirmed: true);
+
+        E2EAssert.True(ctx.Build != null, "ctx.Build 应存在");
+        E2EAssert.True(ctx.Build!.BuildRun == false, "0 变更时 Build 不得执行");
+        E2EAssert.True(ctx.Build.SkipReason.Contains("无可提交变更"),
+            $"SkipReason 应说明无变更，实际：{ctx.Build.SkipReason}");
+        var buildCheck = ctx.Report.Checks.FirstOrDefault(c => c.Id == "build");
+        E2EAssert.True(buildCheck != null, "build 检查项应存在");
+        if (buildCheck != null)
+        {
+            E2EAssert.True(buildCheck.Status != CheckStatus.Blocked,
+                $"0 变更时 build 检查不得为 Blocked，实际：{buildCheck.Status}");
+        }
+        E2EAssert.True(!ctx.Report.HasCommitBlock && !ctx.Report.HasPushBlock,
+            "0 变更 + 必败 csproj 也不得产生任何阻断");
+        // 0 变更的 CanCommit=false 是 PublishGateEvaluator 门控合同（非检查项阻断）
+        var gate = PublishGateEvaluator.Evaluate(ctx.Report, 0, "test: 1", busy: false, newImageCount: 0, imageConfirmed: true, requireImageConfirmation: false);
+        E2EAssert.True(!gate.CanCommit && !gate.CanPush,
+            "0 变更 → 门控不允许提交/推送（原因是无变更，非阻断）");
+    }
+
+    // ---------- ZERO-08（self-host 缺陷核心场景）：成功提交+推送后刷新 → 0 变更 → UP TO DATE ----------
+    // 复现真实缺陷路径：发布（commit+push）成功 → 工作区归零 → 刷新预检。
+    // 修复前：post-publish 全量预检真实执行 dotnet build 可能失败 → 误显示 PUBLISH BLOCKED。
+    // 修复后：0 变更 → Build 跳过 + Banner=UP TO DATE。
+    [E2ETest]
+    public static async Task Z08_PostPublish_Refresh_ZeroChanges_UpToDate()
+    {
+        var repo = await NewRepo("z08_postpub");
+        await InitialCommit(repo);
+        var bare = await NewBareOrigin("z08_origin.git");
+        await AddRemote(repo, bare);
+        Write(repo, "feature.txt", "v1");
+
+        var vm = new MainViewModel();
+        vm.ProjectPath = repo;
+        await vm.RunChecksAsync();
+        E2EAssert.Equal(1, vm.CommittableChangeCount, "发布前应有 1 个可提交变更");
+        vm.CommitMessage = "feat: post-publish refresh";
+        E2EAssert.True(vm.CanCommit, "发布前应可提交");
+
+        var result = await NewPublish().ExecuteAsync(new PublishWorkflowService.PublishRequest
+        {
+            RepositoryRoot = repo,
+            CommitMessage = "feat: post-publish refresh",
+            Mode = PublishWorkflowService.PublishMode.CommitAndPush
+        });
+        E2EAssert.True(result.Committed && result.Pushed, $"提交+推送应成功：{result.Error}");
+
+        // 发布后刷新（PublishAsync finally 中 RunChecksAsync 的等价路径）
+        await vm.RunChecksAsync();
+
+        E2EAssert.Equal(0, vm.CommittableChangeCount, "发布后工作区应归零");
+        E2EAssert.True(!vm.CanCommit, "发布后 CanCommit=false（原因是无变更，非阻断）");
+        E2EAssert.True(!vm.CanPush, "发布后 CanPush=false（原因是无变更，非阻断）");
+        E2EAssert.Equal("UP TO DATE", vm.PublishBannerTitle,
+            "发布后 0 变更必须显示 UP TO DATE，不得出现假 PUBLISH BLOCKED");
+
+        var build = vm.LastContext!.Build;
+        E2EAssert.True(build != null && build.BuildRun == false, "发布后刷新时 Build 不得执行");
+        E2EAssert.True(build!.SkipReason.Contains("无可提交变更"),
+            $"发布后刷新 SkipReason 应为无变更，实际：{build.SkipReason}");
     }
 }

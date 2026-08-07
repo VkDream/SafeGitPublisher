@@ -21,4 +21,5 @@ appsettings.Local.json
 *.pem
 .claude/
 .reasonix/
+.serena/
 *.log

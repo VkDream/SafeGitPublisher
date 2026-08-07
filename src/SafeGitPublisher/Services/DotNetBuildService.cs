@@ -62,16 +62,44 @@ public sealed class DotNetBuildService
         var start = DateTime.UtcNow;
         var output = new List<string>();
 
+        // self-host 缺陷修复：构建输出全部隔离到 %TEMP%\SafeGitPublisher\PreflightBuild\<GUID>。
+        // 即使 SafeGitPublisher.exe 自身正在运行（正式 bin\Debug 输出被锁定），
+        // --artifacts-path 也会把 apphost/exe/bin/obj 写入隔离目录，不会触碰仓库 bin/obj 与运行中 EXE。
+        // 若隔离目录创建失败，绝不静默降级为传统构建（否则会复现 MSB3027/MSB3021 自我锁定），而是明确返回未执行原因。
+        var isolationRoot = TempBuildRoot.CreateRoot();
+        if (isolationRoot == null)
+        {
+            return new BuildResult
+            {
+                BuildRun = false,
+                TargetKind = target.Kind,
+                TargetDisplay = target.FileName,
+                ProjectPath = project,
+                SkipReason = "无法创建隔离构建输出目录（%TEMP% 不可写或空间不足），已跳过构建，请检查临时目录后重新检查。"
+            };
+        }
+
         var result = await _runner.RunAsync(new ProcessRequest
         {
             FileName = "dotnet",
-            Arguments = new List<string> { "build", project, "--nologo", "-v:m" },
+            Arguments = new List<string>
+            {
+                "build", project, "--nologo", "-v:m",
+                "--artifacts-path", isolationRoot
+            },
             WorkingDirectory = repoRoot,
             Timeout = TimeSpan.FromMinutes(10),
             Utf8Output = true,
             OnStdoutLine = line => { lock (output) output.Add(line); },
             OnStderrLine = line => { lock (output) output.Add(line); }
         }, ct);
+
+        // best-effort 清理：失败不影响构建结果判定，仅标记供日志提示
+        var cleanupOk = TempBuildRoot.TryCleanup(isolationRoot);
+        if (!cleanupOk)
+        {
+            output.Add($"Warning: 隔离构建临时目录清理失败（不影响构建结果）：{isolationRoot}");
+        }
 
         var duration = DateTime.UtcNow - start;
         var text = string.Join("\n", output);
@@ -113,7 +141,9 @@ public sealed class DotNetBuildService
             TargetKind = target.Kind,
             ProjectPath = project,
             TargetDisplay = target.FileName,
-            CommandSummary = $"dotnet build {target.FileName}",
+            CommandSummary = $"dotnet build {target.FileName}（隔离输出）",
+            BuildMode = "Isolated Temporary Output",
+            IsolationRoot = isolationRoot,
             Succeeded = succeeded,
             ExitCode = result.ExitCode ?? -1,
             WarningCount = warningCount,
@@ -121,7 +151,8 @@ public sealed class DotNetBuildService
             Duration = duration,
             TimedOut = result.TimedOut,
             Summary = summary,
-            ErrorLines = errorLines
+            ErrorLines = errorLines,
+            CleanupFailed = !cleanupOk
         };
     }
 

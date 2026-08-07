@@ -559,33 +559,33 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         PublishBannerVisible = true;
-        if (report.HasCommitBlock || report.HasPushBlock)
+        switch (PublishBannerEvaluator.Evaluate(report, CommittableChangeCount))
         {
-            PublishBannerTitle = "PUBLISH BLOCKED";
-            PublishBannerDetail = $"存在 {report.BlockedCount} 项阻断问题";
-            PublishBannerBrush = UiPalette.Blocked;
-            PublishBannerGlyph = "\uEA39";
-        }
-        else if (report.HasWarning)
-        {
-            PublishBannerTitle = "REVIEW REQUIRED";
-            PublishBannerDetail = $"存在 {report.WarningCount} 项需要确认";
-            PublishBannerBrush = UiPalette.Warning;
-            PublishBannerGlyph = "\uE7BA";
-        }
-        else if (CommittableChangeCount > 0)
-        {
-            PublishBannerTitle = "READY TO PUBLISH";
-            PublishBannerDetail = "可以安全提交";
-            PublishBannerBrush = UiPalette.Pass;
-            PublishBannerGlyph = "\uE73E";
-        }
-        else
-        {
-            PublishBannerTitle = "UP TO DATE";
-            PublishBannerDetail = "当前没有可提交的变更";
-            PublishBannerBrush = UiPalette.Info;
-            PublishBannerGlyph = "\uE73E";
+            case PublishBannerKind.Blocked:
+                PublishBannerTitle = "PUBLISH BLOCKED";
+                PublishBannerDetail = $"存在 {report.BlockedCount} 项阻断问题";
+                PublishBannerBrush = UiPalette.Blocked;
+                PublishBannerGlyph = "\uEA39";
+                break;
+            case PublishBannerKind.ReviewRequired:
+                PublishBannerTitle = "REVIEW REQUIRED";
+                PublishBannerDetail = $"存在 {report.WarningCount} 项需要确认";
+                PublishBannerBrush = UiPalette.Warning;
+                PublishBannerGlyph = "\uE7BA";
+                break;
+            case PublishBannerKind.Ready:
+                PublishBannerTitle = "READY TO PUBLISH";
+                PublishBannerDetail = "可以安全提交";
+                PublishBannerBrush = UiPalette.Pass;
+                PublishBannerGlyph = "\uE73E";
+                break;
+            case PublishBannerKind.UpToDate:
+            default:
+                PublishBannerTitle = "UP TO DATE";
+                PublishBannerDetail = "当前没有可提交的变更";
+                PublishBannerBrush = UiPalette.Info;
+                PublishBannerGlyph = "\uE73E";
+                break;
         }
     }
 
