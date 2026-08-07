@@ -1,8 +1,18 @@
 # SafeGitPublisher CHANGELOG
 
-## v1.0.0（2026-08-07，Release Candidate，修复自发布 Build Target 缺陷后待用户验收）
+## v1.0.0（2026-08-07，已真实自发布到 GitHub）
+
+### 里程碑：真实自发布（SELF-PUBLISH 闭环）
+- 用户通过 SafeGitPublisher 自身 GUI 对 **E:\SafeGitPublisher** 执行真实 commit + push，成功推送到 GitHub：
+  - Repository：`VkDream/SafeGitPublisher`
+  - Branch：`main`
+  - Commit：`eee477742188c62c1d5c6e51f4c76b9a0cfeac69`
+  - Message：`release: SafeGitPublisher v1.0.0`
+  - 状态：**Push 成功**，证明 SafeGitPublisher 已完成真实 self-host / self-publish 闭环。
+- 该次真实发布同时验证了全部安全 Gate（含 Build Target 解析、Secret 扫描、Sensitive 扫描）在真实仓库下的放行与清理流程正常。
 
 ### 修复
+- **InformationalVersion commit hash 回归（真实自发布后暴露）**：仓库出现首个 HEAD commit 后，.NET SDK 默认在构建时向 `InformationalVersion` 追加 commit hash（`1.0.0+eee4777...`），导致版本精确性断言（必须恰好 `1.0.0`）失败。修复：csproj 增加 `<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>`，InformationalVersion 恒为 `1.0.0`（版本值未升级，仍为 1.0.0）。
 - **Build Target Resolution 缺陷（V1.0.0 RC 自发布验收发现）**：旧实现假定 csproj 位于 `RepositoryRoot\RepositoryName.csproj`，真实"根 .slnx + src/tests 子目录"结构自发布报 `MSB1009 项目文件不存在`。
   - 新增 `Services\BuildTargetResolver.cs` 纯静态解析器，合同：根目录唯一 `*.sln`/`*.slnx` → 选中；多 solution → 与仓库名匹配优先，否则歧义（需人工选择，不随意猜）；无 solution → 递归扫 csproj（排除 bin/obj/.git/node_modules，深度 ≤8）；唯一 csproj → 选中；多 csproj → 仓库名匹配主应用优先，否则歧义；完全无 .NET 项目 → 跳过构建（非 Build Failed）。
   - **支持 `.slnx`**（与 .sln 同优先级）。
@@ -17,10 +27,10 @@
 - E2E（22/22）：T15（真实结构 .slnx + src/tests 子目录构建 PASS，Build Target=MyApp.slnx）、T16（中文+空格路径 sln 构建 PASS）、T17（无 .NET 项目→Info 跳过，不报 MSB1009）、T18（多 csproj 歧义→Warning 需人工选择，不阻断提交）。
 
 ### 验证
-- Debug/Release 0 警告 0 错误；单测 87/87（201 断言）；E2E 22/22；GUI 冒烟（主窗口+4 对话框，单测内置）。
+- Debug/Release 0 警告 0 错误；单测 87/87（201 assertions）；E2E 22/22；GUI 冒烟（主窗口+4 对话框，单测内置）。
 - **真实只读自检查 E:\SafeGitPublisher**（邀请 console 程序直接运行 PreflightService）：Git 仓库 PASS / Git 作者 PASS（VkDream LOCAL）/ Remote PASS（origin → VkDream/SafeGitPublisher）/ 分支 main PASS / **Build PASS，Build Target=SafeGitPublisher.slnx（dotnet build SafeGitPublisher.slnx）**；生成推荐 .gitignore 后 bin/obj 不再进变更（74 项），敏感文件 PASS，Secret Scan PASS；`.gitignore` 已实际生成。
-- 唯一待人工项：图片脱敏确认（`assets/SafeGitPublisher-source.png`，确认页勾选即可）。
-- 待用户 GUI 验收 & 实际首次自发布（用户人工执行 git 提交/推送）。
+- **真实 self-publish 验证**：用户经 GUI 对 E:\SafeGitPublisher 真实 commit + push 成功（commit `eee477742188c62c1d5c6e51f4c76b9a0cfeac69`，`release: SafeGitPublisher v1.0.0`），GitHub 远端 `VkDream/SafeGitPublisher` main 分支已接收。
+- 待用户项已收窄为：DPI 100/125/150 目视验收（尚未确认）、v1.0.0 Git Tag / GitHub Release / 可下载发布包（下一步 Release Distribution）。
 
 ## v1.0.1（历史修复记录）
 
