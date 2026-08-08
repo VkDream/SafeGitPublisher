@@ -8,6 +8,7 @@ namespace SafeGitPublisher.Tests;
 /// 合同：0 个可提交变更时，顶部必须显示 UP TO DATE（"当前没有可提交的变更"），
 /// 不得因"针对待发布内容"的 Gate（Build/Image 等）显示 PUBLISH BLOCKED；
 /// 但仓库级致命异常（git 不可用 / 非 Git 仓库 / 合并冲突）即使 0 变更也保留 Blocked。
+/// SGP-UI-002：PUBLISH BLOCKED 的 Detail 文案语义（安全语义与显示语义分离）。
 /// </summary>
 public static class BannerEvaluatorTests
 {
@@ -74,7 +75,7 @@ public static class BannerEvaluatorTests
             "0 变更时 Commit 级 Gate 也不得显示 PUBLISH BLOCKED（没有内容可发布）");
     }
 
-    // ---------- 0 个可提交变更 + 仓库致命异常 → 仍 Blocked ----------
+    // ---------- 0 个可提交变更 + 仓库完整性异常 → 仍 Blocked ----------
 
     [Test]
     public static void B06_ZeroChanges_Conflict_StillBlocked()
@@ -99,7 +100,7 @@ public static class BannerEvaluatorTests
     {
         var report = Report(Chk("git_available", CheckStatus.Blocked, blocksCommit: true, blocksPush: true));
         Assert.Equal(PublishBannerKind.Blocked, PublishBannerEvaluator.Evaluate(report, 0),
-            "git 不可用属于环境致命异常，0 变更也必须保持 BLOCKED");
+            "git 不可用属于环境级异常，0 变更也必须保持 BLOCKED");
     }
 
     // ---------- 存在可提交变更 → 安全门禁照常（不削弱） ----------
@@ -134,5 +135,61 @@ public static class BannerEvaluatorTests
         var staleReport = HealthyReport(Chk("build", CheckStatus.Blocked, blocksPush: true));
         Assert.Equal(PublishBannerKind.UpToDate, PublishBannerEvaluator.Evaluate(staleReport, 0),
             "发布后 0 变更 → 不得出现假 PUBLISH BLOCKED");
+    }
+
+    // ---------- SGP-UI-002：PUBLISH BLOCKED 文案语义（安全语义与显示语义分离） ----------
+
+    [Test]
+    public static void BANNER001_WarningBlocksPush_ZeroBlocked_DetailNeverZeroBlocked()
+    {
+        // 真实现场：未配置 origin → Remote Warning + BlocksPush=true，无任何 Blocked 状态。
+        var report = HealthyReport(
+            Chk("remote", CheckStatus.Warning, blocksPush: true),
+            Chk("git_identity", CheckStatus.Warning));
+        Assert.Equal(PublishBannerKind.Blocked, PublishBannerEvaluator.Evaluate(report, 3),
+            "Warning + BlocksPush=true 属于硬性 Push 拦截，Banner 可以为 PUBLISH BLOCKED");
+
+        var detail = PublishBannerEvaluator.BlockedDetail(report);
+        Assert.True(!detail.Contains("0 项", StringComparison.Ordinal),
+            $"Detail 绝不能出现 0 项阻断：{detail}");
+        Assert.True(detail.Contains("需处理问题", StringComparison.Ordinal), $"应显示需处理问题：{detail}");
+        Assert.True(detail.Contains("当前无法发布", StringComparison.Ordinal), $"应说明当前无法发布：{detail}");
+        Assert.True(detail.Contains("1 项", StringComparison.Ordinal), $"数量应按真实 Push 拦截项统计：{detail}");
+    }
+
+    [Test]
+    public static void BANNER002_RealBlockedN_DetailShowsN()
+    {
+        var report = HealthyReport(Chk("secret_scan", CheckStatus.Blocked, blocksCommit: true, blocksPush: true));
+        Assert.Equal(PublishBannerKind.Blocked, PublishBannerEvaluator.Evaluate(report, 2), "真 Blocked → PUBLISH BLOCKED");
+        Assert.Equal("存在 1 项阻断问题", PublishBannerEvaluator.BlockedDetail(report), "真 Blocked=1 应显示 1 项阻断问题");
+
+        var report2 = HealthyReport(
+            Chk("secret_scan", CheckStatus.Blocked, blocksCommit: true, blocksPush: true),
+            Chk("large_files", CheckStatus.Blocked, blocksCommit: true, blocksPush: true));
+        Assert.Equal("存在 2 项阻断问题", PublishBannerEvaluator.BlockedDetail(report2), "真 Blocked=2 应显示 2 项阻断问题");
+    }
+
+    [Test]
+    public static void BANNER_NoBlock_WithWarning_ReviewRequired()
+    {
+        var report = HealthyReport(Chk("git_identity", CheckStatus.Warning));
+        Assert.Equal(PublishBannerKind.ReviewRequired, PublishBannerEvaluator.Evaluate(report, 1),
+            "无阻断 + 有 Warning → REVIEW REQUIRED");
+        Assert.Equal("存在 1 项需要确认", PublishBannerEvaluator.ReviewRequiredDetail(report));
+    }
+
+    [Test]
+    public static void BANNER_004_AllPass_WithChanges_Ready()
+    {
+        Assert.Equal(PublishBannerKind.Ready, PublishBannerEvaluator.Evaluate(HealthyReport(), 2),
+            "全部 PASS + 有变更 → READY TO PUBLISH");
+    }
+
+    [Test]
+    public static void BANNER_005_ZeroChanges_UpToDate()
+    {
+        Assert.Equal(PublishBannerKind.UpToDate, PublishBannerEvaluator.Evaluate(HealthyReport(), 0),
+            "0 变更 → UP TO DATE");
     }
 }

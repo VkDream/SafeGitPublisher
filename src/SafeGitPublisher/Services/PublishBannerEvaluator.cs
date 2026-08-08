@@ -54,4 +54,29 @@ public static class PublishBannerEvaluator
 
         return PublishBannerKind.Ready;
     }
+
+    /// <summary>计算 REVIEW REQUIRED 的 Detail 文案（数量按真实 Warning 数统计）。</summary>
+    public static string ReviewRequiredDetail(PreflightReport report)
+        => $"存在 {report.WarningCount} 项需要确认";
+
+    /// <summary>
+    /// 计算 PUBLISH BLOCKED 的 Detail 文案（SGP-UI-002 修复）。
+    /// 安全语义与显示语义分离：Blocked 状态数只统计真正 CheckStatus.Blocked 的检查项；
+    /// 若 Banner 因"Warning 级但 BlocksPush=true"的硬拦截项（如未配置 origin）变红，
+    /// 则显示"需处理问题"文案，绝不显示"存在 0 项阻断问题"。
+    /// </summary>
+    public static string BlockedDetail(PreflightReport report)
+    {
+        var realBlocked = report.BlockedCount;
+        if (realBlocked > 0)
+        {
+            return $"存在 {realBlocked} 项阻断问题";
+        }
+
+        // 无 Blocked 状态，但存在 Warning + BlocksPush=true 的硬拦截项（如未配置 origin）：
+        // 数量按真实 Push 拦截项统计，避免再次出现"0 项"字眼。
+        var pushBlockNeeds = report.Checks.Count(c =>
+            c.BlocksPush && c.Status != CheckStatus.Pass && c.Status != CheckStatus.Info);
+        return $"存在 {pushBlockNeeds} 项需处理问题，当前无法发布";
+    }
 }

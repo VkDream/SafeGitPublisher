@@ -1,27 +1,36 @@
 <Window x:Class="SafeGitPublisher.Views.GitignorePreviewDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title=".gitignore 预览" Width="720" Height="560" WindowStartupLocation="CenterOwner"
+        Title=".gitignore 预览" Width="720" Height="560" MinWidth="620" MinHeight="460"
+        WindowStartupLocation="CenterOwner"
         Background="{StaticResource PageBg}">
+    <!-- SGP-UI-001 修复：内容区使用 * 行并保证最小高度（RowDefinition.MinHeight），
+         按钮行使用自带 MinHeight 的 Auto 行——任何 Windows 显示环境下按钮行都不会被
+         内容控件挤出窗口可视区域；窗口设置 MinWidth/MinHeight 防止把按钮行压缩到不可见。 -->
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="200" />
+            <RowDefinition Height="Auto" MinHeight="44" />
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Style="{StaticResource SectionTitle}" Text="生成 / 补充 .gitignore" />
         <TextBlock Grid.Row="1" Text="以下将写入 .gitignore（只追加缺失规则，不覆盖现有内容）。"
                    Foreground="{StaticResource TextSecondary}" Margin="0,0,0,8" TextWrapping="Wrap" />
 
-        <TextBox Grid.Row="2" x:Name="ContentBox"
+        <TextBox Grid.Row="2" x:Name="ContentBox" Margin="0,0,0,0"
+                 MinHeight="200" VerticalAlignment="Stretch" VerticalContentAlignment="Top"
                  IsReadOnly="True" AcceptsReturn="True" HorizontalScrollBarVisibility="Auto"
                  VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" />
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="90" Margin="0,0,10,0" Click="OnCancel" />
-            <Button Content="应用" Style="{StaticResource PrimaryButton}" Width="90" Click="OnApply" />
+        <!-- 按钮条：独立 Auto 行（MinHeight=44 防压缩）+ 底部边距固定 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="0,12,0,0" VerticalAlignment="Bottom">
+            <Button x:Name="CancelButton" Content="取消" Style="{StaticResource SecondaryButton}"
+                    Width="90" Height="34" Margin="0,0,10,0" Click="OnCancel" IsCancel="True" />
+            <Button x:Name="ApplyButton" Content="应用" Style="{StaticResource PrimaryButton}"
+                    Width="90" Height="34" Click="OnApply" IsDefault="True" />
         </StackPanel>
     </Grid>
 </Window>

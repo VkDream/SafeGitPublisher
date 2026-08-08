@@ -563,13 +563,15 @@ public sealed class MainViewModel : ViewModelBase
         {
             case PublishBannerKind.Blocked:
                 PublishBannerTitle = "PUBLISH BLOCKED";
-                PublishBannerDetail = $"存在 {report.BlockedCount} 项阻断问题";
+                // SGP-UI-002：Detail 语义与安全语义分离——真 Blocked 才显示"N 项阻断问题"；
+                // Warning+BlocksPush（如未配置 origin）显示"N 项需处理问题，当前无法发布"，绝不显示"0 项阻断"。
+                PublishBannerDetail = PublishBannerEvaluator.BlockedDetail(report);
                 PublishBannerBrush = UiPalette.Blocked;
                 PublishBannerGlyph = "\uEA39";
                 break;
             case PublishBannerKind.ReviewRequired:
                 PublishBannerTitle = "REVIEW REQUIRED";
-                PublishBannerDetail = $"存在 {report.WarningCount} 项需要确认";
+                PublishBannerDetail = PublishBannerEvaluator.ReviewRequiredDetail(report);
                 PublishBannerBrush = UiPalette.Warning;
                 PublishBannerGlyph = "\uE7BA";
                 break;

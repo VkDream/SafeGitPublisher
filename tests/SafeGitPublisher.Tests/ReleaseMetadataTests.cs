@@ -17,12 +17,12 @@ public static class ReleaseMetadataTests
         "..", "..", "..", "..", ".."));
 
     [Test]
-    public static void VersionService_Matches_1_0_0()
+    public static void VersionService_Matches_1_0_1()
     {
-        Assert.Equal("1.0.0", AppVersionService.ProductVersion);
-        Assert.Equal("1.0.0.0", AppVersionService.AssemblyVersion);
-        Assert.Equal("1.0.0.0", AppVersionService.FileVersion);
-        Assert.Equal("v1.0.0", AppVersionService.DisplayVersion);
+        Assert.Equal("1.0.1", AppVersionService.ProductVersion);
+        Assert.Equal("1.0.1.0", AppVersionService.AssemblyVersion);
+        Assert.Equal("1.0.1.0", AppVersionService.FileVersion);
+        Assert.Equal("v1.0.1", AppVersionService.DisplayVersion);
     }
 
     [Test]
@@ -30,7 +30,7 @@ public static class ReleaseMetadataTests
     {
         var attr = typeof(AppVersionService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
         Assert.NotNull(attr, "应存在 AssemblyInformationalVersionAttribute");
-        Assert.Equal("1.0.0", attr!.InformationalVersion, "InformationalVersion 必须恰好为 1.0.0（不得附加 +commit 后缀）");
+        Assert.Equal("1.0.1", attr!.InformationalVersion, "InformationalVersion 必须恰好为 1.0.1（不得附加 +commit 后缀）");
     }
 
     [Test]
@@ -73,10 +73,10 @@ public static class ReleaseMetadataTests
         var text = File.ReadAllText(csproj, Encoding.UTF8);
         Assert.Contains(text, "SafeGitPublisher.ico", "csproj 必须引用图标文件");
         Assert.Contains(text, "ApplicationIcon", "csproj 必须声明 ApplicationIcon");
-        Assert.Contains(text, "<Version>1.0.0</Version>", "Version 应为 1.0.0");
-        Assert.Contains(text, "<AssemblyVersion>1.0.0.0</AssemblyVersion>", "AssemblyVersion 应为 1.0.0.0");
-        Assert.Contains(text, "<FileVersion>1.0.0.0</FileVersion>", "FileVersion 应为 1.0.0.0");
-        Assert.Contains(text, "<InformationalVersion>1.0.0</InformationalVersion>", "InformationalVersion 应为 1.0.0");
+        Assert.Contains(text, "<Version>1.0.1</Version>", "Version 应为 1.0.1");
+        Assert.Contains(text, "<AssemblyVersion>1.0.1.0</AssemblyVersion>", "AssemblyVersion 应为 1.0.1.0");
+        Assert.Contains(text, "<FileVersion>1.0.1.0</FileVersion>", "FileVersion 应为 1.0.1.0");
+        Assert.Contains(text, "<InformationalVersion>1.0.1</InformationalVersion>", "InformationalVersion 应为 1.0.1");
     }
 
     [Test]
