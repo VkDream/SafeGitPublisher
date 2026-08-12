@@ -220,3 +220,38 @@ public sealed class StringFallbackConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => Binding.DoNothing;
 }
+
+/// <summary>
+/// 将 Conventional Commits 前缀转换为中文界面名称。
+/// 仅改变下拉框显示文字，绑定值仍保留原始前缀，确保最终 Git 提交说明继续使用 feat:、fix: 等标准格式。
+/// </summary>
+public sealed class CommitPrefixToChineseConverter : IValueConverter
+{
+    /// <summary>
+    /// 把提交前缀转换为用户可读的中文名称；未知前缀保持原样，避免隐藏新增类型。
+    /// </summary>
+    /// <param name="value">ViewModel 提供的原始提交前缀。</param>
+    /// <param name="targetType">WPF 绑定目标类型。</param>
+    /// <param name="parameter">未使用的转换参数。</param>
+    /// <param name="culture">当前界面区域设置。</param>
+    /// <returns>用于下拉框显示的中文名称。</returns>
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var prefix = value as string ?? string.Empty;
+        return prefix.Trim() switch
+        {
+            "" => "不使用前缀",
+            "feat:" => "新增功能",
+            "fix:" => "问题修复",
+            "docs:" => "文档更新",
+            "refactor:" => "代码重构",
+            "chore:" => "日常维护",
+            "test:" => "测试调整",
+            _ => prefix
+        };
+    }
+
+    /// <summary>显示转换不可反向写入，实际选中值由 ComboBox 的 SelectedItem 绑定维护。</summary>
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => Binding.DoNothing;
+}

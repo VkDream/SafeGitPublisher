@@ -12,6 +12,7 @@
         <conv:BoolToVisibilityConverter x:Key="BusyVis" />
         <conv:BoolToVisibilityConverter x:Key="ImgVis" />
         <conv:BoolToVisibilityConverter x:Key="BannerVis" />
+        <conv:CommitPrefixToChineseConverter x:Key="CommitPrefixToChinese" />
 
         <!-- 仓库摘要 Chip 样式 -->
         <Style x:Key="Chip" TargetType="Border">
@@ -322,7 +323,13 @@
                             <TextBlock Text="提交说明" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,12,0" />
                             <ComboBox Width="150" ItemsSource="{Binding CommitPrefixes}"
                                       SelectedItem="{Binding SelectedCommitPrefix, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      ToolTip="快捷前缀（feat: / fix: / docs: 等）" />
+                                      ToolTip="选择提交类型，最终提交仍使用标准前缀">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={StaticResource CommitPrefixToChinese}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
                         <TextBox Margin="0,6,0,0" Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}"
                                  ToolTip="{Binding CommitMessage}" />
