@@ -23,6 +23,12 @@ public sealed class AppSettings
     /// <summary>大文件阻断阈值（MB，对应 GitHub 100MB 限制）。</summary>
     public double LargeFileBlockingMB { get; set; } = 100;
 
+    /// <summary>仓库总体积警告阈值（MB）。待提交全部文件合计超过该值时给出警告。</summary>
+    public double RepoSizeWarningMB { get; set; } = 500;
+
+    /// <summary>仓库总体积阻断阈值（MB）。待提交全部文件合计超过该值时阻断提交与推送。</summary>
+    public double RepoSizeBlockingMB { get; set; } = 1000;
+
     /// <summary>提交前是否构建。</summary>
     public bool BuildBeforeCommit { get; set; } = true;
 

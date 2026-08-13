@@ -122,6 +122,67 @@ public sealed class LargeFileScanner
         }
     }
 
+    /// <summary>
+    /// 计算待提交总体积（字节）：只统计非删除且已获取到大小的文件。
+    /// 纯函数，供单测。
+    /// </summary>
+    public static long ComputeTotalBytes(IEnumerable<GitFileChange> changes)
+    {
+        long total = 0;
+        foreach (var change in changes)
+        {
+            if (change.IsDeletedLike() || change.SizeBytes < 0) continue;
+            total += change.SizeBytes;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// 仓库总体积门禁（纯函数，供单测）。
+    /// 合同：&gt; blockingMB → Blocked（阻断提交与推送）；&gt; warningMB → Warning（不阻断）；否则 Normal。
+    /// 设计动机：单文件阈值无法拦截"大量中等文件合计超大"（如 113 张 14MB 位图共 1.6GB），
+    /// GitHub 不会因单文件拒绝，但仓库会永久膨胀、推送极慢，因此需要总量门禁。
+    /// </summary>
+    public static (RiskLevel Risk, string Description) ClassifyTotalSize(long totalBytes, double warningMB, double blockingMB)
+    {
+        var mb = totalBytes / (1024.0 * 1024.0);
+        if (mb > blockingMB)
+        {
+            return (RiskLevel.Blocked,
+                $"待提交总体积 {mb:F0} MB，超过阻断阈值 {blockingMB:F0} MB。请通过 .gitignore 排除构建产物/测试素材/第三方运行时，或使用 Git LFS。");
+        }
+        if (mb > warningMB)
+        {
+            return (RiskLevel.Warning,
+                $"待提交总体积 {mb:F0} MB，超过警告阈值 {warningMB:F0} MB，请确认这些内容都需要进入仓库历史。");
+        }
+        return (RiskLevel.Normal, $"待提交总体积 {mb:F1} MB");
+    }
+
+    /// <summary>
+    /// 按扩展名汇总待提交体积 Top N（纯函数，供报告详情与单测）。
+    /// 输出形如 ".bmp ×113 = 1590.5 MB" 的行，按体积降序。
+    /// </summary>
+    public static string SummarizeByExtension(IEnumerable<GitFileChange> changes, int top = 5)
+    {
+        var groups = new Dictionary<string, (int Count, long Bytes)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var change in changes)
+        {
+            if (change.IsDeletedLike() || change.SizeBytes < 0) continue;
+            var ext = Path.GetExtension(change.Path);
+            if (string.IsNullOrEmpty(ext)) ext = "(无扩展名)";
+            groups.TryGetValue(ext, out var g);
+            groups[ext] = (g.Count + 1, g.Bytes + change.SizeBytes);
+        }
+
+        var lines = groups
+            .OrderByDescending(kv => kv.Value.Bytes)
+            .Take(top)
+            .Select(kv => $"{kv.Key} ×{kv.Value.Count} = {kv.Value.Bytes / (1024.0 * 1024.0):F1} MB")
+            .ToList();
+        return lines.Count == 0 ? "(无可统计文件)" : string.Join("\n", lines);
+    }
+
     private static ScanSeverity ToSeverity(RiskLevel risk) => risk switch
     {
         RiskLevel.Blocked => ScanSeverity.Blocked,

@@ -1221,7 +1221,8 @@ public sealed class MainViewModel : ViewModelBase
                     : PublishWorkflowService.PublishMode.CommitAndPush,
                 ImageConfirmed = _imageConfirmed
                     && string.Equals(_currentImageFingerprint, _confirmedImageFingerprint, StringComparison.Ordinal),
-                RequireImageConfirmation = _settings.RequireImagePrivacyConfirmation
+                RequireImageConfirmation = _settings.RequireImagePrivacyConfirmation,
+                RepoSizeBlockingMB = _settings.RepoSizeBlockingMB
             }, Log, _cts?.Token ?? CancellationToken.None);
 
             if (result.Informational)
@@ -1387,7 +1388,8 @@ public sealed class MainViewModel : ViewModelBase
                     RepositoryRoot = root,
                     RequireImageConfirmation = _settings.RequireImagePrivacyConfirmation,
                     RequireBuildVerification = requireBuildVerification,
-                    BuildVerifiedCommitOid = buildVerifiedCommitOid
+                    BuildVerifiedCommitOid = buildVerifiedCommitOid,
+                    RepoSizeBlockingMB = _settings.RepoSizeBlockingMB
                 }, Log, prepareToken);
             }
             finally

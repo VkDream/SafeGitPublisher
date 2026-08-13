@@ -17,6 +17,7 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 | 5 | 敏感文件 | bin/obj/publish/tmp/.vs/.claude、*.db、.env、secrets.json、appsettings.Local.json、*.pfx/*.key/*.pem、*.log 等 → Blocked；已被 .gitignore 排除的显示"已安全忽略" | 提交 + Push |
 | 6 | Secret 扫描 | github_pat_/ghp_/sk-/AKIA/Bearer → Blocked；赋值型 secret/password 明文（High）同样硬阻断；内网 IP/非本机 Server → Warning；关键字 → Info | 提交 + Push |
 | 7 | 大文件 | >10MB Warning、>50MB 高危 Warning、>100MB（GitHub 硬限制）→ Blocked | 提交 + Push |
+| 7.5 | **仓库总体积**（V1.0.1 新增） | 待提交合计 >500MB → Warning、>1000MB → Blocked（阈值可在设置调整）；详情按扩展名汇总 Top 占用。动机：单文件阈值拦不住"113 张 14MB 位图共 1.6GB"（2026-08-13 ReadCode 真实现场） | 提交 + Push |
 | 8 | Git 作者 | 与推荐身份不一致 → Warning（一键应用，只写仓库 local 配置） | 不阻断 |
 | 9 | Remote | 未配置 origin → Warning（禁 Push，可设置）；地址畸形（https\:// 等）→ Blocked | Push |
 | 10 | 分支 | master → Info 提示；detached HEAD / 读取失败 → Blocked | detached HEAD / 读取失败禁 Push |
@@ -34,13 +35,13 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 ## 二、界面功能
 
 - 最近项目（10 个）+ 选择项目 → 自动检查
-- 12 项检查结果列表（✅/⚠/🚫 + 颜色）+ 一键修复按钮
+- 13 项检查结果列表（✅/⚠/🚫 + 颜色）+ 一键修复按钮
 - 变更文件列表（状态/大小/风险）与详细报告对话框
 - 提交类型中文显示（新增功能/问题修复/文档更新/代码重构/日常维护/测试调整），内部仍使用 feat:/fix:/docs:/refactor:/chore:/test:
 - 两个常规发布按钮：**仅提交** / **安全提交并上传**，均带最终确认页
 - 独立恢复入口：**检查并上传已有提交**。用于“本地提交已成功，但网络中断导致尚未 Push”的现场；它只核对并上传锁定的已有提交，不会再次暂存或重复 commit
 - 首次发布向导：git init → .gitignore → 作者身份 → 设置 origin（勾选时）→ 完整检查 → 最终确认 → 发布
-- 设置对话框（大文件阈值、构建开关、图片确认开关、推荐作者）
+- 设置对话框（大文件阈值、仓库总体积阈值、构建开关、图片确认开关、推荐作者）
 
 ## 三、目录结构
 
@@ -52,8 +53,8 @@ E:\SafeGitPublisher
 │  ├─ Services\                    # 进程/ Git / 扫描 / 检查 / 发布服务
 │  ├─ ViewModels\                  # MVVM
 │  └─ Views\                       # 主窗口 + 对话框（XAML 可视化界面）
-├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（当前 149 项）
-└─ tests\SafeGitPublisher.E2E      # 真实 git 临时仓库端到端测试（31 项）
+├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（当前 156 项）
+└─ tests\SafeGitPublisher.E2E      # 真实 git 临时仓库端到端测试（34 项）
 ```
 
 ## 四、构建与测试
@@ -78,10 +79,19 @@ dotnet run --project "E:\SafeGitPublisher\src\SafeGitPublisher\SafeGitPublisher.
 
 `%LOCALAPPDATA%\SafeGitPublisher\settings.json`（不写入程序目录）。
 
-## 六、当前验证结果（2026-08-13，V1.0.1 安全加固）
+## 六、当前验证结果（2026-08-13，V1.0.1 安全加固 + 仓库总体积门禁）
 
-- 纯单元/静态合同测试：149/149 通过（442 assertions）；本轮显式排除 `GuiSmokeHost`、`DialogSmokeTests`、`GuiStartupSmoke`，保证不启动 GUI 或 Git 进程；包含安全测试源码自扫描与“已有提交仅上传”防复发合同。
-- 历史 E2E 基线：31/31（2026-08-08）；本轮因未获得 Git 调用授权，未重跑 E2E，不把历史结果冒充当前验证。
+- **本轮（2026-08-13 下午，仓库总体积门禁）**：
+  - 单元测试：156/156 通过（465 assertions；新增 REPOSIZE-01~06：总量分类阈值/求和跳过删除项/扩展名 Top 汇总/**真实现场复现（113 张 14.42MB 位图共 1.59GB 必须阻断，排除后纯源码放行）**/设置默认值序列化合同/Gate 文案映射）
+  - E2E：新增 RS01~03 全过（总量阻断+commit 前最终门禁同合同拦截 / 警告级不阻断 / Pass+检查项≥13 合同）
+  - Debug/Release 构建：0 Warning / 0 Error；GUI 冒烟（含新增"仓库总体积规则"设置组）通过
+  - **新功能：仓库总体积门禁（第 13 项检查 repo_size）**：待提交合计 >500MB → Warning、>1000MB → Blocked（同时阻断提交与推送，阈值设置可调，0 < 警告 < 阻断）；三层同合同——预检（PreflightService）→ commit 前最终门禁（QuickSafetyCheckAsync）→ push 前历史门禁（ScanOutgoingHistoryAsync，按去重 blob 求和）；详情按扩展名汇总 Top 占用（如 `.bmp ×113 = 1590.5 MB`）。动机：2026-08-13 ReadCode 真实现场——805 个变更共 2.05GB，113 张 14.42MB 位图每张单独仅 Warning，单文件阈值全部放行。
+  - **E2E 重跑发现并修复安全加固轮（2026-08-12/13，该轮未跑 E2E）回归 4 项**：
+    - T03（真实产品 bug）：显式 URL push（安全设计）不创建 `refs/remotes/origin/<branch>` 跟踪引用 → 随后 `set-upstream-to` 在 Git ≥2.37 报 `the requested upstream branch 'origin/main' does not exist`（`advice.setUpstreamFailure`），用户看到"Push 成功但 upstream 失败"假警报。修复：push 核验成功（远端 OID 与锁定提交一致）后，先 `git update-ref refs/remotes/origin/<branch> <已核验OID>` 纯本地精确创建跟踪引用（`GitService.SetOriginTrackingRefAsync`，无网络），再 set-upstream。
+    - T05/T09/T13（测试断言过时）：安全加固把 origin 网络探测提到安全扫描之前，老用例 CommitAndPush 无 origin → 在安全门前被远端门禁拦截（Committed=False 行为正确），断言文案不命中。修复：这三个用例改 CommitOnly（同样经过 QuickSafetyCheck 安全门，验证意图不变，已加注释说明合同）。
+    - 修复后 E2E：**34/34 全过**。
+- 纯单元/静态合同测试：149/149 通过（442 assertions）；本轮显式排除 `GuiSmokeHost`、`DialogSmokeTests`、`GuiStartupSmoke`，保证不启动 GUI 或 Git 进程；包含安全测试源码自扫描与"已有提交仅上传"防复发合同。（2026-08-13 上午安全加固轮记录）
+- 历史 E2E 基线：31/31（2026-08-08）；2026-08-13 安全加固轮因未获得 Git 调用授权未重跑；本轮（同日下午）重跑并修复安全加固轮回归后：**34/34 全过**。
 - Debug 构建：0 Warning / 0 Error
 - Release 构建：0 Warning / 0 Error；ProductVersion=1.0.1 / FileVersion=1.0.1.0
 - XAML XML 静态解析通过；本轮未启动 GUI，中文前缀下拉框、最终确认页图片勾选仍待用户目视确认。

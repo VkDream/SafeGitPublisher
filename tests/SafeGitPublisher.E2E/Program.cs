@@ -262,11 +262,13 @@ public static class Scenarios
         E2EAssert.True(sensitive != null && sensitive.Status == CheckStatus.Blocked, "未忽略 .db 应阻断");
         E2EAssert.True(!ctx.Report.CanCommit, ".db 阻断提交");
 
+        // CommitOnly：安全加固合同要求 CommitAndPush 先验证 origin 网络路径（本场景未配 origin 会被远端门禁先拦截），
+        // 而本用例验证的是敏感文件安全门本身，CommitOnly 同样经过 QuickSafetyCheck，验证意图一致。
         var result = await NewPublish().ExecuteAsync(new PublishWorkflowService.PublishRequest
         {
             RepositoryRoot = repo,
             CommitMessage = "bad",
-            Mode = PublishWorkflowService.PublishMode.CommitAndPush
+            Mode = PublishWorkflowService.PublishMode.CommitOnly
         });
         E2EAssert.True(result.Error != null && result.Error.Contains("敏感", StringComparison.Ordinal), "发布应被安全门拦截");
         E2EAssert.True(!result.Committed, "阻断时不应产生提交");
@@ -356,11 +358,12 @@ public static class Scenarios
         E2EAssert.True(secretCheck.Status == CheckStatus.Blocked, "Token 应阻断");
         E2EAssert.True(!ctx.Report.CanCommit, "Token 阻断提交");
 
+        // CommitOnly：同上——本用例验证 Secret 安全门，CommitAndPush 会先被 origin 前置门禁拦截（安全加固合同）。
         var result = await NewPublish().ExecuteAsync(new PublishWorkflowService.PublishRequest
         {
             RepositoryRoot = repo,
             CommitMessage = "bad",
-            Mode = PublishWorkflowService.PublishMode.CommitAndPush
+            Mode = PublishWorkflowService.PublishMode.CommitOnly
         });
         E2EAssert.True(result.Error != null && result.Error.Contains("Secret", StringComparison.Ordinal), "发布应被 Secret 门拦截");
         E2EAssert.True(!result.Committed, "阻断时不应产生提交");
@@ -462,11 +465,12 @@ public static class Scenarios
         E2EAssert.True(statusCheck.Status == CheckStatus.Blocked, "冲突应阻断");
         E2EAssert.True(!ctx.Report.CanCommit, "冲突阻断提交");
 
+        // CommitOnly：同上——本用例验证冲突拦截，冲突检查在任何模式的最前段，CommitAndPush 会先被 origin 前置门禁拦截。
         var result = await NewPublish().ExecuteAsync(new PublishWorkflowService.PublishRequest
         {
             RepositoryRoot = repo,
             CommitMessage = "bad",
-            Mode = PublishWorkflowService.PublishMode.CommitAndPush
+            Mode = PublishWorkflowService.PublishMode.CommitOnly
         });
         E2EAssert.True(result.Error != null && result.Error.Contains("冲突", StringComparison.Ordinal), "发布应被冲突拦截");
     }

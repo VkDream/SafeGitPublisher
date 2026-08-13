@@ -80,6 +80,7 @@ public static class PublishGateEvaluator
                 "build" => "构建未通过，禁止 Push",
                 "branch" => "当前分支状态不允许 Push",
                 "image_privacy" => "新增图片未确认脱敏，禁止 Push",
+                "repo_size" => "待提交总体积超过限制，请先精简（.gitignore / Git LFS）",
                 _ => "存在阻断 Push 的检查项，请先处理"
             };
         }

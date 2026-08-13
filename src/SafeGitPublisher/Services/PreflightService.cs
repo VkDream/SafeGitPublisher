@@ -352,6 +352,33 @@ public sealed class PreflightService
             log?.Invoke(LogLevel.Pass, "大文件检查通过");
         }
 
+        // ---------- 6.5) 仓库总体积门禁 ----------
+        // 合同：单文件阈值无法拦截"大量中等文件合计超大"（如 113 张 14MB 位图共 1.6GB），
+        // GitHub 不会因单文件拒绝，但仓库会永久膨胀。总量门禁在提交前拦截（Blocked 同时阻断 commit 与 push）。
+        var totalBytes = LargeFileScanner.ComputeTotalBytes(changes);
+        var (totalRisk, totalDesc) = LargeFileScanner.ClassifyTotalSize(
+            totalBytes, settings.RepoSizeWarningMB, settings.RepoSizeBlockingMB);
+        if (totalRisk == RiskLevel.Blocked)
+        {
+            Add("repo_size", "仓库总体积", CheckStatus.Blocked,
+                totalDesc,
+                blocksCommit: true, blocksPush: true,
+                details: "按扩展名统计 Top 占用：\n" + LargeFileScanner.SummarizeByExtension(changes));
+            log?.Invoke(LogLevel.Blocked, $"仓库总体积阻断：{totalBytes / (1024.0 * 1024.0):F0} MB");
+        }
+        else if (totalRisk == RiskLevel.Warning)
+        {
+            Add("repo_size", "仓库总体积", CheckStatus.Warning,
+                totalDesc,
+                details: "按扩展名统计 Top 占用：\n" + LargeFileScanner.SummarizeByExtension(changes));
+            log?.Invoke(LogLevel.Warn, $"仓库总体积警告：{totalBytes / (1024.0 * 1024.0):F0} MB");
+        }
+        else
+        {
+            Add("repo_size", "仓库总体积", CheckStatus.Pass, totalDesc);
+            log?.Invoke(LogLevel.Pass, $"仓库总体积检查通过：{totalBytes / (1024.0 * 1024.0):F1} MB");
+        }
+
         // ---------- 7) Git 身份 ----------
         var identity = await new GitIdentityService(_git)
             .GetIdentityAsync(root, settings.RecommendedGitName, settings.RecommendedGitEmail, ct);

@@ -29,8 +29,11 @@ public partial class SettingsDialog : Window
         var ok = TryParse(WarnBox) is double w && w > 0
                  && TryParse(HighBox) is double h && h > w
                  && TryParse(BlockBox) is double b && b > h && b <= 100;
-        SaveButton.IsEnabled = ok;
+        var repoOk = TryParse(RepoWarnBox) is double rw && rw > 0
+                     && TryParse(RepoBlockBox) is double rb && rb > rw;
+        SaveButton.IsEnabled = ok && repoOk;
         ThresholdErrorText.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
+        RepoThresholdErrorText.Visibility = repoOk ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static double? TryParse(System.Windows.Controls.TextBox box)

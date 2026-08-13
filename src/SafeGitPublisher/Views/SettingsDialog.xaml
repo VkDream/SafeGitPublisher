@@ -56,6 +56,32 @@
                     </StackPanel>
                 </GroupBox>
 
+                <!-- ===== 仓库总体积规则 ===== -->
+                <GroupBox Header="仓库总体积规则（MB）" Padding="10" Margin="0,0,0,14">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="警告" Foreground="{StaticResource TextSecondary}" />
+                                <TextBox x:Name="RepoWarnBox" Text="{Binding Settings.RepoSizeWarningMB, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnThresholdChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="阻断" Foreground="{StaticResource TextSecondary}" />
+                                <TextBox x:Name="RepoBlockBox" Text="{Binding Settings.RepoSizeBlockingMB, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnThresholdChanged" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Margin="0,6,0,0" Foreground="{StaticResource TextSecondary}" FontSize="11"
+                                   Text="待提交全部文件的合计体积限制：防止大量中等文件（如上百张测试图片）绕过单文件阈值撑爆仓库。" />
+                        <TextBlock x:Name="RepoThresholdErrorText" Margin="0,4,0,0" Foreground="{StaticResource BlockedBrush}"
+                                   FontSize="12" Text="要求 0 &lt; 警告 &lt; 阻断"
+                                   Visibility="Collapsed" />
+                    </StackPanel>
+                </GroupBox>
+
                 <!-- ===== 发布行为 ===== -->
                 <GroupBox Header="发布行为" Padding="10" Margin="0,0,0,14">
                     <StackPanel>

@@ -85,6 +85,9 @@ public sealed class ExistingPushPrepareRequest
 
     /// <summary>true 时，没有当前锁定提交的构建证明即失败关闭。</summary>
     public bool RequireBuildVerification { get; init; }
+
+    /// <summary>仓库总体积阻断阈值（MB，来自设置）。与预检 repo_size 检查同一合同。</summary>
+    public double RepoSizeBlockingMB { get; init; } = 1000;
 }
 
 /// <summary>执行已经准备好的仅上传计划。</summary>

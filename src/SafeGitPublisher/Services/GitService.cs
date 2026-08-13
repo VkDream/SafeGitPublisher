@@ -289,6 +289,19 @@ public sealed class GitService
         return await RunGitAsync(workDir, new[] { "branch", "--set-upstream-to", $"origin/{branch}", branch }, ct);
     }
 
+    /// <summary>
+    /// 把本地 origin 远程跟踪引用精确设置为已核验的提交 OID（git update-ref refs/remotes/origin/&lt;branch&gt; &lt;oid&gt;）。
+    /// 调用前提：push 已核验成功且远端 OID 已与该锁定提交比对一致；本操作纯本地、不访问网络。
+    /// 存在原因：显式 URL push（&lt;url&gt; &lt;oid&gt;:refs/heads/&lt;branch&gt;）不会创建 refs/remotes/origin/&lt;branch&gt;，
+    /// 直接 set-upstream-to 会报 "origin/&lt;branch&gt; does not exist"（Git ≥2.37 起附带 advice.setUpstreamFailure 提示）。
+    /// </summary>
+    public async Task<CommandResult> SetOriginTrackingRefAsync(string workDir, string branch, string verifiedOid, CancellationToken ct = default)
+    {
+        if (!IsSafeBranchName(branch)) throw new ArgumentException("分支名称包含不允许的字符。", nameof(branch));
+        if (!IsObjectId(verifiedOid)) throw new ArgumentException("跟踪引用目标 OID 格式无效。", nameof(verifiedOid));
+        return await RunGitAsync(workDir, new[] { "update-ref", $"refs/remotes/origin/{branch}", verifiedOid }, ct);
+    }
+
     /// <summary>git pull --ff-only（不自动 merge）。</summary>
     public async Task<CommandResult> PullFfOnlyAsync(string workDir, CancellationToken ct = default)
     {

@@ -1,5 +1,15 @@
 # SafeGitPublisher CHANGELOG
 
+## v1.0.1（2026-08-13 下午，仓库总体积门禁）
+
+- **新功能：仓库总体积门禁（第 13 项检查 `repo_size`）**：待提交合计 >500MB → Warning、>1000MB → Blocked（同时阻断提交与推送；阈值可在设置调整，校验 0 < 警告 < 阻断）。三层同合同：预检（PreflightService）→ commit 前最终门禁（QuickSafetyCheckAsync）→ push 前历史门禁（ScanOutgoingHistoryAsync，按去重 blob 求和）。报告详情按扩展名汇总 Top 占用。动机：ReadCode 真实现场 805 变更共 2.05GB（113 张 14.42MB 位图每张单独仅 Warning），单文件阈值全部放行。
+- 设置对话框新增"仓库总体积规则（MB）"组（警告/阻断阈值 + 验证）。
+- 验证：Debug/Release 0 Warning / 0 Error；单测 156/156（465 assertions，含 GUI 冒烟）；E2E 新增 RS01~03 全过。
+- **E2E 重跑暴露安全加固轮（2026-08-12/13，该轮未跑 E2E）回归 4 项，本轮已全部修复**：
+  - T03（真实产品 bug）：显式 URL push 不创建 `refs/remotes/origin/<branch>` 跟踪引用 → set-upstream 在 Git ≥2.37 报 `advice.setUpstreamFailure`。修复：push 核验成功后 `git update-ref refs/remotes/origin/<branch> <已核验OID>` 纯本地精确创建跟踪引用（新增 `GitService.SetOriginTrackingRefAsync`，无网络），再 set-upstream。
+  - T05/T09/T13（测试断言过时）：origin 前置门禁先于安全门，老用例改 CommitOnly 恢复验证意图（Committed=False 行为本就正确）。
+- 修复后全量回归：单测 156/156、**E2E 34/34**、Debug/Release 0 Warning / 0 Error。
+
 ## v1.0.1（2026-08-12，安全加固，待 GUI/真实 Git 验收）
 
 - 对抗审查修复：预检快照新鲜度、全局操作租约、图片确认指纹、设置/同步后 Gate 失效、首次发布向导可达性与流程自重入。

@@ -61,6 +61,9 @@ public sealed class PublishWorkflowService
 
         /// <summary>图片隐私确认是否启用（来自设置）。</summary>
         public bool RequireImageConfirmation { get; init; } = true;
+
+        /// <summary>仓库总体积阻断阈值（MB，来自设置）。最终门禁与预检使用同一阈值，保证合同一致。</summary>
+        public double RepoSizeBlockingMB { get; init; } = 1000;
     }
 
     /// <summary>执行提交或提交并上传；任何安全信息读取失败都中止，不使用不完整结果继续。</summary>
@@ -121,7 +124,7 @@ public sealed class PublishWorkflowService
         }
 
         log?.Invoke(LogLevel.Info, "步骤 2/8  重新执行关键安全检查…");
-        var quick = await QuickSafetyCheckAsync(root, changes, ct);
+        var quick = await QuickSafetyCheckAsync(root, changes, request.RepoSizeBlockingMB, ct);
         if (quick.Error != null) return new PublishResult { Error = quick.Error };
         if (quick.Blocks.Count > 0)
         {
@@ -278,7 +281,7 @@ public sealed class PublishWorkflowService
             {
                 return CommittedFailure(lockedCommitOid, "无法读取 origin 远端分支状态，已拒绝 Push：" + remoteBeforeScan.Error);
             }
-            var outgoing = await ScanOutgoingHistoryAsync(root, remoteBeforeScan.Oid, lockedCommitOid, ct);
+            var outgoing = await ScanOutgoingHistoryAsync(root, remoteBeforeScan.Oid, lockedCommitOid, request.RepoSizeBlockingMB, ct);
             if (outgoing.Error != null) return CommittedFailure(lockedCommitOid, outgoing.Error);
             if (outgoing.Blocks.Count > 0)
             {
@@ -337,6 +340,22 @@ public sealed class PublishWorkflowService
 
             if (!hasUpstream)
             {
+                // 显式 URL push（安全设计）不会创建 refs/remotes/origin/<branch> 跟踪引用，
+                // 直接 set-upstream 在 Git ≥2.37 报 "origin/<branch> does not exist"（advice.setUpstreamFailure）。
+                // push 后已核验 pushedSnapshot.Oid == lockedCommitOid（上方），按已核验 OID 精确创建跟踪引用（纯本地、无网络）。
+                var trackRef = await _git.SetOriginTrackingRefAsync(root, plannedBranch!, lockedCommitOid, ct);
+                if (!trackRef.Success)
+                {
+                    return new PublishResult
+                    {
+                        Committed = true,
+                        Pushed = true,
+                        PushState = PushDeliveryState.Pushed,
+                        CommitOid = lockedCommitOid,
+                        CommitShortHash = shortHash,
+                        Error = "Push 已成功，但创建 origin 跟踪引用失败；不会重复 Push，请人工检查分支跟踪配置：" + Describe(trackRef)
+                    };
+                }
                 var setUpstream = await _git.SetOriginUpstreamAsync(root, plannedBranch!, ct);
                 if (!setUpstream.Success)
                 {
@@ -385,7 +404,7 @@ public sealed class PublishWorkflowService
         }
     }
 
-    private async Task<(List<string> Blocks, string? Error)> QuickSafetyCheckAsync(string root, IReadOnlyList<GitFileChange> changes, CancellationToken ct)
+    private async Task<(List<string> Blocks, string? Error)> QuickSafetyCheckAsync(string root, IReadOnlyList<GitFileChange> changes, double repoSizeBlockingMB, CancellationToken ct)
     {
         var trackedResult = await _git.LsFilesAsync(root, ct);
         if (!trackedResult.Success) return (new List<string>(), "读取已跟踪文件失败，已按安全策略中止：" + Describe(trackedResult));
@@ -399,6 +418,14 @@ public sealed class PublishWorkflowService
         blocks.AddRange(secret.Findings.Where(IsSecretGateFinding).Select(FormatSecret));
         if (!secret.IsComplete) blocks.Add("Secret 快速复检未完整覆盖：" + DescribeIncompleteScan(secret));
         blocks.AddRange(_largeFileScanner.Scan(root, changes).Where(finding => finding.Severity == ScanSeverity.Blocked).Select(finding => $"大文件 {finding.File}：{finding.Message}"));
+
+        // 仓库总体积最终门禁（与预检 repo_size 检查同一合同）：commit 前最后防线。
+        var totalBytes = LargeFileScanner.ComputeTotalBytes(changes);
+        var (totalRisk, totalDesc) = LargeFileScanner.ClassifyTotalSize(totalBytes, double.MaxValue, repoSizeBlockingMB);
+        if (totalRisk == RiskLevel.Blocked)
+        {
+            blocks.Add($"仓库总体积：{totalDesc}");
+        }
         return (blocks, null);
     }
 
@@ -470,7 +497,7 @@ public sealed class PublishWorkflowService
         return (blocks, null);
     }
 
-    private async Task<OutgoingScanResult> ScanOutgoingHistoryAsync(string root, string? remoteOid, string lockedCommitOid, CancellationToken ct)
+    private async Task<OutgoingScanResult> ScanOutgoingHistoryAsync(string root, string? remoteOid, string lockedCommitOid, double repoSizeBlockingMB, CancellationToken ct)
     {
         var outgoing = await _git.OutgoingCommitsFromRemoteOidAsync(root, remoteOid, lockedCommitOid, ct);
         if (!outgoing.Success) return new OutgoingScanResult(new List<string>(), "无法确定待推送提交范围，已拒绝 Push：" + Describe(outgoing), 0, false);
@@ -492,6 +519,7 @@ public sealed class PublishWorkflowService
         var seenBlobs = new HashSet<string>(StringComparer.Ordinal);
         var seenPaths = new HashSet<string>(StringComparer.Ordinal);
         var hasImages = false;
+        long totalOutgoingBytes = 0;
         foreach (var commit in commits)
         {
             var tree = await _git.ListCommitBlobsAsync(root, commit, ct);
@@ -515,6 +543,7 @@ public sealed class PublishWorkflowService
                 var firstBlob = seenBlobs.Add(oid);
                 if (firstBlob)
                 {
+                    totalOutgoingBytes += size;
                     var (risk, description) = _largeFileScanner.Classify(size);
                     if (risk == RiskLevel.Blocked) blocks.Add($"历史大文件 {path}（提交 {ShortOid(commit)}）：{description}");
                 }
@@ -561,6 +590,13 @@ public sealed class PublishWorkflowService
                 }
                 if (scanError != null) return new OutgoingScanResult(blocks, scanError, commits.Count, hasImages);
             }
+        }
+
+        // 待推送历史总体积最终门禁（按去重 blob 求和，与预检 repo_size 同一合同）。
+        var (totalRisk, totalDesc) = LargeFileScanner.ClassifyTotalSize(totalOutgoingBytes, double.MaxValue, repoSizeBlockingMB);
+        if (totalRisk == RiskLevel.Blocked)
+        {
+            blocks.Add($"待推送历史总体积：{totalDesc}");
         }
         return new OutgoingScanResult(blocks.Distinct(StringComparer.Ordinal).ToList(), null, commits.Count, hasImages);
     }
@@ -628,7 +664,7 @@ public sealed class PublishWorkflowService
         }
 
         log?.Invoke(LogLevel.Info, $"正在复检待推送历史：{ShortOid(lockedOid)} / {remoteDisplay}");
-        var scan = await ScanOutgoingHistoryAsync(root, remote.Oid, lockedOid, ct);
+        var scan = await ScanOutgoingHistoryAsync(root, remote.Oid, lockedOid, request.RepoSizeBlockingMB, ct);
         if (scan.Error != null)
         {
             return ExistingPlan(ExistingPushDisposition.Unknown, root, branch, lockedOid, remote.Oid, remoteDisplay,
