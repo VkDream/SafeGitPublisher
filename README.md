@@ -1,5 +1,7 @@
 # SafeGitPublisher（GitHub 安全发布助手）V1
 
+> [English README](README_EN.md)
+
 SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在把项目推送到 GitHub 之前自动执行发布前安全检查（Secret 扫描、敏感文件、大文件、作者身份、Remote、图片脱敏、构建验证），并把 "检查 → 提交 → 推送" 收敛为一次受保护的发布流程。
 
 技术栈：C# / WPF / .NET 10 / x64 / MVVM。
