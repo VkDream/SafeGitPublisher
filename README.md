@@ -15,19 +15,20 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 | 3 | 工作区状态 | 合并冲突（AA/UU/DD/AU/UA/DU/UD）→ Blocked | 提交 + Push |
 | 4 | .gitignore | 缺失推荐规则 → Warning（可一键生成，只追加不覆盖） | 不阻断 |
 | 5 | 敏感文件 | bin/obj/publish/tmp/.vs/.claude、*.db、.env、secrets.json、appsettings.Local.json、*.pfx/*.key/*.pem、*.log 等 → Blocked；已被 .gitignore 排除的显示"已安全忽略" | 提交 + Push |
-| 6 | Secret 扫描 | github_pat_/ghp_/sk-/AKIA/Bearer → Blocked；赋值型 secret/password 字面量 → High；内网 IP/非本机 Server → Warning；关键字 → Info | 提交 + Push |
+| 6 | Secret 扫描 | github_pat_/ghp_/sk-/AKIA/Bearer → Blocked；赋值型 secret/password 明文（High）同样硬阻断；内网 IP/非本机 Server → Warning；关键字 → Info | 提交 + Push |
 | 7 | 大文件 | >10MB Warning、>50MB 高危 Warning、>100MB（GitHub 硬限制）→ Blocked | 提交 + Push |
 | 8 | Git 作者 | 与推荐身份不一致 → Warning（一键应用，只写仓库 local 配置） | 不阻断 |
 | 9 | Remote | 未配置 origin → Warning（禁 Push，可设置）；地址畸形（https\:// 等）→ Blocked | Push |
-| 10 | 分支 | master / detached HEAD → Info 提示 | 不阻断 |
+| 10 | 分支 | master → Info 提示；detached HEAD / 读取失败 → Blocked | detached HEAD / 读取失败禁 Push |
 | 11 | 图片脱敏 | 本次含新增/修改图片 → Warning 并禁 Push，需勾选"图片已完成脱敏检查" | Push |
 | 12 | 构建 | .NET 项目 build 失败 → Blocked（禁 Push）；构建警告 → Warning | Push |
 
 规则：
-- **BLOCKED = 禁 Push**（部分检查同时禁提交）；**WARNING = 复核后确认可继续**。
-- 提交流程二次闸门：`git add --all` 后再扫描已暂存内容，发现 Blocked 项自动 `git reset` 取消暂存并中止。
+- **BLOCKED = 禁 Push**（部分检查同时禁提交）；**WARNING = 复核后确认可继续**；High 明文凭据按 Blocked 处理。
+- 提交流程最终闸门：`git add --all` 后从 index Git blob 原始字节复扫；中止时恢复操作前 index tree，不清空用户原有部分暂存。
+- 已扫描 index tree 与实际 commit tree 必须一致；hook 在扫描后改写暂存内容会禁止成功回包与 Push。Push 前还会扫描真实待推送历史。
 - 危险命令黑名单（force push / rebase / reset --hard / clean -fd / filter-repo / branch -D / restore / checkout -- . 等）**绝不自动执行**。
-- Push 仅使用普通 `git push` 或首次 `git push -u origin <branch>`；同步远端仅使用 `git pull --ff-only`，从不自动 merge。
+- Push 使用两次校验的精确 origin push URL 和 `HEAD:refs/heads/<branch>`；同步远端仅使用 `git pull --ff-only`，从不自动 merge。
 - 所有 Secret 输出统一脱敏（保留公开前缀 + **** + 末尾 4 位），日志与界面永不出现凭据原文。
 
 ## 二、界面功能
@@ -35,9 +36,9 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 - 最近项目（10 个）+ 选择项目 → 自动检查
 - 12 项检查结果列表（✅/⚠/🚫 + 颜色）+ 一键修复按钮
 - 变更文件列表（状态/大小/风险）与详细报告对话框
-- 提交信息前缀（feat:/fix:/docs:/refactor:/chore:/test:）
+- 提交类型中文显示（新增功能/问题修复/文档更新/代码重构/日常维护/测试调整），内部仍使用 feat:/fix:/docs:/refactor:/chore:/test:
 - 两个发布按钮：**仅提交** / **安全提交并上传**，均带最终确认页
-- 首次发布向导：git init → .gitignore → 作者身份 → 检查 → 设置 origin → 发布
+- 首次发布向导：git init → .gitignore → 作者身份 → 设置 origin（勾选时）→ 完整检查 → 最终确认 → 发布
 - 设置对话框（大文件阈值、构建开关、图片确认开关、推荐作者）
 
 ## 三、目录结构
@@ -50,7 +51,7 @@ E:\SafeGitPublisher
 │  ├─ Services\                    # 进程/ Git / 扫描 / 检查 / 发布服务
 │  ├─ ViewModels\                  # MVVM
 │  └─ Views\                       # 主窗口 + 对话框（XAML 可视化界面）
-├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（113 项，含 GUI 启动冒烟）
+├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（当前 139 项）
 └─ tests\SafeGitPublisher.E2E      # 真实 git 临时仓库端到端测试（31 项）
 ```
 
@@ -76,13 +77,13 @@ dotnet run --project "E:\SafeGitPublisher\src\SafeGitPublisher\SafeGitPublisher.
 
 `%LOCALAPPDATA%\SafeGitPublisher\settings.json`（不写入程序目录）。
 
-## 六、测试结果（2026-08-08，V1.0.1 external dogfooding 修复）
+## 六、当前验证结果（2026-08-12，V1.0.1 安全加固）
 
-- 单元测试：113/113 通过（250 assertions；新增：GitignorePreviewDialog 按钮可见性/滚动/应用/取消 UI-001~004、BANNER-001/002 文案语义）
-- E2E：31/31 通过（新增 UI-003 应用写入 .gitignore / UI-004 取消不写 / UI-005 只追加不覆盖 / BUG002 未配置 origin 时 Banner 文案不得为"0 项阻断问题"）
+- 纯单元/静态合同测试：139/139 通过（339 assertions）；本轮显式排除 `GuiSmokeHost`，保证不启动 GUI 或 Git 进程；包含安全测试源码自扫描防复发用例。
+- 历史 E2E 基线：31/31（2026-08-08）；本轮因未获得 Git 调用授权，未重跑 E2E，不把历史结果冒充当前验证。
 - Debug 构建：0 Warning / 0 Error
 - Release 构建：0 Warning / 0 Error；ProductVersion=1.0.1 / FileVersion=1.0.1.0
-- GUI 冒烟（tests\SafeGitPublisher.Tests\GuiSmokeHost.cs）：单 STA 线程 + 单 Application 实例顺序执行主窗口 + 关于/设置/详细报告/最终确认/.gitignore 预览 5 对话框，捕获 DispatcherUnhandledException 与 DataBinding 运行期错误；通过
+- XAML XML 静态解析通过；本轮未启动 GUI，中文前缀下拉框、最终确认页图片勾选仍待用户目视确认。
 - **V1.0.1 external dogfooding（首个外部真实验收：DeepSeekBalanceTray）**：
   - SGP-UI-001：`.gitignore 预览`按钮不可见 → 根因：构造函数 `Content = data.NewContent` 把 Window.Content（含按钮的整个 XAML 根 Grid）整体替换为纯文本。修复：改写入 `ContentBox.Text`；布局加固（内容区 * 行 MinHeight=200、按钮行 Auto MinHeight=44、窗口 MinWidth/MinHeight=620/460、内容区可滚动、按钮加 x:Name）。取消/应用保持 isReadOnly 只追加合同。
   - SGP-UI-002：`PUBLISH BLOCKED` 显示"存在 0 项阻断问题"根因：Detail 用 `report.BlockedCount`，而 Banner 变红可能由 Warning 级但 BlocksPush=true（未配置 origin）触发。修复：新增 `PublishBannerEvaluator.BlockedDetail()`——真实 Blocked=N → "存在 N 项阻断问题"；无 Blocked 但 Push 硬拦截 → "存在 N 项需处理问题，当前无法发布"，绝不显示"0 项"。ReviewRequired 文案同步进纯函数。
@@ -96,20 +97,20 @@ dotnet run --project "E:\SafeGitPublisher\src\SafeGitPublisher\SafeGitPublisher.
 - **self-host 缺陷修复（V1.0.0 封版后真实现场）：0 变更假 PUBLISH BLOCKED**：成功 commit+push 后工作区归零，post-publish 刷新预检仍执行 `dotnet build`（现场该构建失败）→ 误显示 PUBLISH BLOCKED。修复合同：0 个可提交变更 → Build Gate 不执行（Not Required，SkipReason 明确），报告 Info 不阻断；存在可提交变更 → Build Gate 原样强制（失败仍阻断，安全未削弱）；Banner 0 变更 → UP TO DATE，仓库级致命异常（非 Git 仓库/git 不可用/合并冲突）即使 0 变更仍 BLOCKED。新增 `Services\PublishBannerEvaluator.cs`（纯函数）；构建失败日志增强 ExitCode + 关键错误前 3 行。回归：单测 99/99（214 assertions）、E2E 24/24（Z07/Z08）
 - **self-host 缺陷修复 2（V1.0.0 Tag 前）：Self-Build 隔离输出**：SafeGitPublisher.exe 自身运行中 + 有真实变更 → 传统 build 输出触碰运行中的自身 EXE → MSB3027/MSB3021（已自动化复现）。修复：**发布前 .NET 构建使用隔离临时输出（`dotnet build --artifacts-path %TEMP%\SafeGitPublisher\PreflightBuild\<GUID>`），不覆盖项目正在使用的本地运行输出**；Build Gate 仍为真实强制 Gate（编译错误仍阻断，隔离不是假构建）；`.serena/` 纳入本机 AI/开发工具元数据 ignore/sensitive 策略（与 .claude/ .reasonix/ 同级）。回归：单测 108/108（238 assertions）、E2E 26/26（S01/S02）
 > **Build Target Resolution（V1.0.0 修复）**：不再假定 csproj 位于仓库根目录。解析规则（`Services\BuildTargetResolver.cs`）：
-> 根目录唯一 `*.sln`/`*.slnx` → 构建该 solution（支持 .slnx）｜多 solution → 与仓库名匹配优先，否则需人工选择｜无 solution → 递归搜 csproj｜唯一 csproj → 构建（子目录亦可）｜多 csproj → 仓库名匹配主应用优先，否则需人工选择｜完全无 .NET 项目 → 跳过构建（Info，不报 MSB1009）。
+> 根目录唯一 `*.sln`/`*.slnx` → 构建该 solution（支持 .slnx）｜多 solution → 与仓库名匹配优先，否则判定歧义｜无 solution → 递归搜 csproj｜唯一 csproj → 构建（子目录亦可）｜多 csproj → 仓库名匹配主应用优先，否则判定歧义｜完全无 .NET 项目 → 跳过构建（Info，不报 MSB1009）。开启构建门禁时，歧义会禁止 Push，需先整理出明确目标再重查。
 > 报告显示 Build Target 文件名 + 命令摘要（如 `dotnet build SafeGitPublisher.slnx`）；失败时展示 Target / Exit Code / 关键错误摘要。
 
 > **SGP-UI-002（V1.0.1）**：PUBLISH BLOCKED 的 Detail 不再展示"存在 0 项阻断问题"。安全语义与显示语义分离：真实 Blocked=N → "存在 N 项阻断问题"；无 Blocked 但存在 Warning 且 BlocksPush=true（如未配置 origin）→ "存在 N 项需处理问题，当前无法发布"。ReviewRequired 文案同步进 `PublishBannerEvaluator` 纯函数（`BlockedDetail` / `ReviewRequiredDetail`）。
 
 - 静态检查：全部 XAML 走可视化设计、无硬编码版本（统一 AppVersionService 程序集元数据）、对话框空列表均有空状态
-- Secret 扫描范围：只扫真正可提交的文本候选（二进制/编译输出 dll/pdb/obj/gitignore 排除）；无真实 Secret 时 PASS（测试种子改用运行时拼接，文件内不含完整凭据模式）
+- Secret 扫描范围：预检扫描真正可提交的工作区候选；最终 Gate 会对待提交 index 与待推送历史中不超过 100MiB 的 Git blob 读取原始字节并做内容/编码探测，不按 `.png`、`.dll` 等扩展名直接信任跳过。已忽略文件和删除项不参与工作区文件读取；无真实 Secret 时 PASS（测试种子运行时拼接，源码内不含完整凭据模式）。
 
 > **Zero Change Gate（V1.0.0 新增，人工验收 Bug 修复）**：0 个可提交变更时，无论提交说明是否填写（含 "test:"），CanCommit=CanPush=false，确认页不会打开。
 > 双层防护：① ViewModel/UI 层 CanExecute 实时响应变更数/提交说明/检查结果/忙碌/图片确认（Tooltip 说明禁用原因）；② WorkflowService 打开确认页前重新读取真实 `git status`，0 变更即中止（INFO 提示，非错误红叉），路径集合与最近检查不一致时要求重新检查。
 
 ## 七、已知限制（V1）
 
-- 只针对 GitHub（https / git@ / ssh:// 格式解析）；其他托管平台仅提示"非 GitHub 标准 URL"。
+- 网络 Remote 只允许 GitHub（HTTPS / `git@` / `ssh://git@`）；非 GitHub host、明文 HTTP、嵌入凭据或异常 SSH 用户会阻断。受控本地路径 Remote 仅用于本地验证。
 - 图片脱敏确认为人工确认制（工具不进行图像内容识别）。
 - 构建检查只支持 .NET 项目（识别 csproj/sln）；其他语言项目显示"跳过构建"。
 - 危险命令（force push、rebase、reset --hard 等）不提供自动化执行入口。

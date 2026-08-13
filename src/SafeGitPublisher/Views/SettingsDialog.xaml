@@ -51,7 +51,8 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock x:Name="ThresholdErrorText" Margin="0,8,0,0" Foreground="{StaticResource BlockedBrush}"
-                                   FontSize="12" Text="要求 0 &lt; 警告 &lt; 高危 &lt; 阻断" Visibility="Collapsed" />
+                                   FontSize="12" Text="要求 0 &lt; 警告 &lt; 高危 &lt; 阻断 ≤ 100 MB（GitHub 单文件硬上限）"
+                                   Visibility="Collapsed" />
                     </StackPanel>
                 </GroupBox>
 

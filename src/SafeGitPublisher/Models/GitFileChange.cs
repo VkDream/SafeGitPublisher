@@ -44,7 +44,20 @@ public sealed class GitFileChange
     /// <summary>是否未跟踪。</summary>
     public bool IsUntracked => StatusCode == "??";
 
-    public bool IsDeleted => StatusCode.StartsWith("D", StringComparison.Ordinal);
+    /// <summary>
+    /// 是否属于不会向下一次提交新增文件内容的删除状态。
+    /// porcelain v1 使用两列状态："D " 表示暂存区删除，" D" 表示工作区删除；
+    /// diff --cached --name-status 则使用单字符 "D"。合并冲突（DD/DU/UD 等）必须由冲突门处理，
+    /// 不能当作普通删除跳过安全检查。
+    /// </summary>
+    public bool IsDeletedLike()
+    {
+        if (IsConflict || StatusCode.Length == 0) return false;
+        return StatusCode[0] == 'D' || (StatusCode.Length >= 2 && StatusCode[1] == 'D');
+    }
+
+    /// <summary>兼容现有显示/调用方的删除属性，语义与 IsDeletedLike 保持一致。</summary>
+    public bool IsDeleted => IsDeletedLike();
 
     /// <summary>是否为常见图片扩展名。</summary>
     public bool IsImage => IsImagePath(Path);

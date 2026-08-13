@@ -32,6 +32,11 @@ public sealed class AsyncRelayCommand : ICommand
 
     public async void Execute(object? parameter)
     {
+        // ICommand consumers are expected to query CanExecute first, but callers can invoke
+        // Execute directly. Re-check here so a busy/disabled command cannot be started by a
+        // stale routed-command state or programmatic invocation.
+        if (!CanExecute(parameter)) return;
+
         _isRunning = true;
         CommandManager.InvalidateRequerySuggested();
         try
@@ -40,7 +45,7 @@ public sealed class AsyncRelayCommand : ICommand
         }
         catch (OperationCanceledException)
         {
-            _onException?.Invoke(new OperationCanceledException("操作已取消。"));
+            // 取消是预期控制流；具体命令负责失效旧状态和记录“已取消”。
         }
         catch (Exception ex)
         {

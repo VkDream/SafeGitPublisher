@@ -7,7 +7,7 @@ namespace SafeGitPublisher.Views;
 
 /// <summary>
 /// 设置对话框。DataContext 为 SettingsData。
-/// 大文件阈值验证规则：0 &lt; 警告 &lt; 高危 &lt; 阻断，非法时保存按钮禁用。
+/// 大文件阈值验证规则：0 &lt; 警告 &lt; 高危 &lt; 阻断 ≤ 100 MB，非法时保存按钮禁用。
 /// </summary>
 public partial class SettingsDialog : Window
 {
@@ -28,7 +28,7 @@ public partial class SettingsDialog : Window
     {
         var ok = TryParse(WarnBox) is double w && w > 0
                  && TryParse(HighBox) is double h && h > w
-                 && TryParse(BlockBox) is double b && b > h;
+                 && TryParse(BlockBox) is double b && b > h && b <= 100;
         SaveButton.IsEnabled = ok;
         ThresholdErrorText.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
     }

@@ -10,6 +10,9 @@ namespace SafeGitPublisher.Services;
 /// </summary>
 public sealed class LargeFileScanner
 {
+    /// <summary>GitHub 普通 Git 仓库的单文件硬限制，不能由用户设置调高。</summary>
+    private const double GitHubHardLimitMB = 100;
+
     private readonly double _warningMB;
     private readonly double _highWarningMB;
     private readonly double _blockingMB;
@@ -25,9 +28,15 @@ public sealed class LargeFileScanner
     public (RiskLevel Risk, string Description) Classify(long sizeBytes)
     {
         var mb = sizeBytes / (1024.0 * 1024.0);
+        if (mb > GitHubHardLimitMB)
+        {
+            return (RiskLevel.Blocked,
+                $"文件大小为 {mb:F1} MB，超过 GitHub 100 MB 硬限制，推送会被 GitHub 拒绝。");
+        }
         if (mb > _blockingMB)
         {
-            return (RiskLevel.Blocked, $"文件大小为 {mb:F1} MB，超过 GitHub 100MB 限制（{_blockingMB:F0} MB），推送会被 GitHub 拒绝。");
+            return (RiskLevel.Blocked,
+                $"文件大小为 {mb:F1} MB，超过已配置阻断阈值 {_blockingMB:F0} MB。请使用 Git LFS、拆分或移除该文件。");
         }
         if (mb > _highWarningMB)
         {
@@ -46,20 +55,45 @@ public sealed class LargeFileScanner
     public List<ScanFinding> Scan(string repoRoot, IEnumerable<GitFileChange> changes)
     {
         var findings = new List<ScanFinding>();
+        var normalizedRoot = TryNormalizeRoot(repoRoot);
         foreach (var change in changes)
         {
             if (change.IsDeletedLike()) continue;
 
-            var full = Path.Combine(repoRoot, change.Path.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(full)) continue;
+            if (normalizedRoot == null)
+            {
+                AddIncompleteFinding(findings, change.Path, "仓库根路径无效");
+                change.Risk = RiskLevel.Blocked;
+                continue;
+            }
+            if (!TryResolveInsideRoot(normalizedRoot, change.Path, out var full))
+            {
+                AddIncompleteFinding(findings, change.Path, "文件路径无效或越出仓库根目录");
+                change.Risk = RiskLevel.Blocked;
+                continue;
+            }
+            if (!File.Exists(full))
+            {
+                AddIncompleteFinding(findings, change.Path, "扫描时文件不存在或已不可访问");
+                change.Risk = RiskLevel.Blocked;
+                continue;
+            }
 
             long size;
             try
             {
+                if (ContainsReparsePoint(normalizedRoot, full))
+                {
+                    AddIncompleteFinding(findings, change.Path, "路径包含符号链接或重解析点");
+                    change.Risk = RiskLevel.Blocked;
+                    continue;
+                }
                 size = new FileInfo(full).Length;
             }
-            catch
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
             {
+                AddIncompleteFinding(findings, change.Path, $"无法读取文件大小（{ex.GetType().Name}）");
+                change.Risk = RiskLevel.Blocked;
                 continue;
             }
             change.SizeBytes = size;
@@ -93,13 +127,56 @@ public sealed class LargeFileScanner
         RiskLevel.Blocked => ScanSeverity.Blocked,
         _ => ScanSeverity.Warning
     };
+
+    private static void AddIncompleteFinding(List<ScanFinding> findings, string path, string reason)
+    {
+        findings.Add(new ScanFinding(path, "large-file-scan-incomplete", ScanSeverity.Blocked,
+            $"大文件扫描未完整覆盖：{reason}。为避免未检查内容被提交，已阻断。"));
+    }
+
+    private static string? TryNormalizeRoot(string repoRoot)
+    {
+        try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(repoRoot)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+    }
+
+    private static bool TryResolveInsideRoot(string normalizedRoot, string relativePath, out string fullPath)
+    {
+        fullPath = string.Empty;
+        try
+        {
+            if (Path.IsPathRooted(relativePath)) return false;
+            fullPath = Path.GetFullPath(Path.Combine(normalizedRoot,
+                relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            var rootPrefix = normalizedRoot + Path.DirectorySeparatorChar;
+            return fullPath.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
+                   fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsReparsePoint(string normalizedRoot, string fullPath)
+    {
+        var relative = Path.GetRelativePath(normalizedRoot, fullPath);
+        var current = normalizedRoot;
+        foreach (var part in relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) return true;
+        }
+        return false;
+    }
 }
 
 /// <summary>GitFileChange 扩展：删除判断。</summary>
 public static class GitFileChangeExtensions
 {
-    public static bool IsDeleted(this GitFileChange c) => c.StatusCode.StartsWith("D", StringComparison.Ordinal);
+    public static bool IsDeleted(this GitFileChange c) => c.IsDeletedLike();
 
     /// <summary>重命名、删除等无新增内容的情况（大文件检查跳过）。</summary>
-    public static bool IsDeletedOrRenamedOnly(this GitFileChange c) => IsDeleted(c) || c.StatusCode.StartsWith("R", StringComparison.Ordinal);
+    public static bool IsDeletedOrRenamedOnly(this GitFileChange c) => c.IsDeletedLike() || c.StatusCode.StartsWith("R", StringComparison.Ordinal);
 }

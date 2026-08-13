@@ -9,6 +9,7 @@ namespace SafeGitPublisher.Views;
 public partial class ConfirmPublishDialog : Window
 {
     private readonly ConfirmPublishData _data;
+    private bool _initialized;
 
     public ConfirmPublishDialog(ConfirmPublishData data)
     {
@@ -16,13 +17,29 @@ public partial class ConfirmPublishDialog : Window
         _data = data;
         DataContext = data;
         ConfirmButton.Content = data.CommitOnly ? "确认提交" : "确认提交并 Push";
-        // Zero Change 兜底：0 变更时确认按钮必须禁用（正常流程已被上层拦截）
-        ConfirmButton.IsEnabled = data.ChangeCount > 0;
-        ConfirmButton.ToolTip = data.ChangeCount > 0 ? null : "当前没有可提交的变更";
+        _initialized = true;
+        UpdateConfirmState();
+    }
+
+    /// <summary>图片脱敏勾选变化时，同步最终确认按钮的可用状态与原因。</summary>
+    private void OnImageConfirmationChanged(object sender, RoutedEventArgs e)
+    {
+        if (_initialized) UpdateConfirmState();
+    }
+
+    private void UpdateConfirmState()
+    {
+        var hasChanges = _data.ChangeCount > 0;
+        var imageReady = !_data.RequiresImageConfirmation || _data.ImageConfirmed;
+        ConfirmButton.IsEnabled = hasChanges && imageReady;
+        ConfirmButton.ToolTip = !hasChanges
+            ? "当前没有可提交的变更"
+            : !imageReady ? "请先确认本次图片已完成脱敏检查" : null;
     }
 
     private void OnConfirm(object sender, RoutedEventArgs e)
     {
+        if (_data.RequiresImageConfirmation && !_data.ImageConfirmed) return;
         DialogResult = true;
         Close();
     }

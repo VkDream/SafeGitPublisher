@@ -12,16 +12,28 @@ namespace SafeGitPublisher.Tests;
 /// </summary>
 public static class Program
 {
-    public static int Main()
+    public static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
 
+        var excludedTypes = args
+            .Where(arg => arg.StartsWith("--exclude-type=", StringComparison.OrdinalIgnoreCase))
+            .Select(arg => arg["--exclude-type=".Length..])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var methods = typeof(Program).Assembly
             .GetTypes()
+            .Where(type => !excludedTypes.Contains(type.Name) && !excludedTypes.Contains(type.FullName ?? string.Empty))
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
             .Where(m => m.GetCustomAttribute<TestAttribute>() != null)
             .OrderBy(m => m.Name)
             .ToList();
+
+        if (excludedTypes.Count > 0)
+        {
+            Console.WriteLine("本轮排除测试类型：" + string.Join("、", excludedTypes.OrderBy(x => x)));
+        }
 
         var pass = 0;
         var fail = 0;
@@ -150,6 +162,37 @@ public static class Assert
         _count++;
         var n = items.Count();
         if (n != expected) throw new Exception($"Assert.Count 失败：期望 {expected}，实际 {n}" + (string.IsNullOrEmpty(message) ? string.Empty : "：" + message));
+    }
+}
+
+/// <summary>首次发布向导的源码级执行顺序合同，防止重新引入命令自重入。</summary>
+public static class FirstPublishWizardContractTests
+{
+    private static string ReadMainViewModelSource()
+    {
+        var root = Path.GetFullPath(Path.Combine(
+            Path.GetDirectoryName(typeof(FirstPublishWizardContractTests).Assembly.Location) ?? string.Empty,
+            "..", "..", "..", "..", ".."));
+        return File.ReadAllText(Path.Combine(root, "src", "SafeGitPublisher", "ViewModels", "MainViewModel.cs"), Encoding.UTF8);
+    }
+
+    [Test]
+    public static void FirstPublishWizard_OriginBeforePreflight_AndNoPublishCommandRecursion()
+    {
+        var source = ReadMainViewModelSource();
+        var start = source.IndexOf("private async Task RunFirstPublishWizardAsync", StringComparison.Ordinal);
+        var end = source.IndexOf("// ---------- 其它命令 ----------", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "应找到首次发布向导方法");
+        var method = source[start..end];
+
+        var setOrigin = method.IndexOf("if (result.SetOrigin)", StringComparison.Ordinal);
+        var preflight = method.IndexOf("RunChecksAsync(allowOperationLease: true)", StringComparison.Ordinal);
+        var publishCore = method.IndexOf("PublishCheckedAsync(", StringComparison.Ordinal);
+        Assert.True(setOrigin >= 0 && setOrigin < preflight, "SetOrigin 条件必须在完整预检前执行");
+        Assert.True(preflight >= 0 && preflight < publishCore, "完整预检必须先于发布核心");
+        Assert.NotContains(method, "await PublishAsync(", "向导不得递归调用发布命令");
+        Assert.Contains(method, "SetOperationLease(true)", "向导打开前必须持有全局租约");
+        Assert.Contains(method, "SetOperationLease(false)", "finally 必须释放全局租约");
     }
 }
 

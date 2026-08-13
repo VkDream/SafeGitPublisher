@@ -61,7 +61,7 @@
                     <TextBlock Text="{Binding DotNetVersionText}" Foreground="{StaticResource TextSecondary}"
                                VerticalAlignment="Center" Margin="0,0,14,0" />
                     <Button Content="设置" Style="{StaticResource SecondaryButton}" Height="28" Padding="10,2"
-                            Command="{Binding ShowSettingsCommand}" />
+                            Command="{Binding ShowSettingsCommand}" IsEnabled="{Binding CanOperate}" />
                     <Button Content="关于" Style="{StaticResource SecondaryButton}" Height="28" Padding="10,2"
                             Margin="8,0,0,0" Click="OnAbout" />
                 </StackPanel>
@@ -93,13 +93,14 @@
                 <TextBlock Grid.Column="0" Text="项目目录" VerticalAlignment="Center"
                            Foreground="{StaticResource TextSecondary}" Width="70" />
                 <TextBox Grid.Column="1" Text="{Binding ProjectPath, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="{Binding ProjectPath}" />
+                         ToolTip="{Binding ProjectPath}" IsEnabled="{Binding CanOperate}" />
                 <Button Grid.Column="2" Content="选择…" Style="{StaticResource SecondaryButton}"
-                        Width="80" Margin="8,0,8,0" Command="{Binding BrowseProjectCommand}" />
+                        Width="80" Margin="8,0,8,0" Command="{Binding BrowseProjectCommand}"
+                        IsEnabled="{Binding CanOperate}" />
                 <ComboBox Grid.Column="3" Width="260"
                           ItemsSource="{Binding RecentProjects}"
                           SelectedItem="{Binding SelectedRecentProject, Mode=TwoWay}"
-                          ToolTip="最近项目（点击选择后自动检查）" />
+                          ToolTip="最近项目（点击选择后自动检查）" IsEnabled="{Binding CanOperate}" />
             </Grid>
 
             <!-- ===== 仓库摘要 chips ===== -->
@@ -167,6 +168,7 @@
             <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,8,0,0"
                     Visibility="{Binding ImageConfirmationRequired, Converter={StaticResource ImgVis}}">
                 <CheckBox IsChecked="{Binding ImageConfirmed, UpdateSourceTrigger=PropertyChanged}"
+                          IsEnabled="{Binding CanOperate}"
                           Foreground="{StaticResource WarningBrush}"
                           Content="我确认本次新增的图片已完成脱敏检查（不存在客户名称、内部项目名、用户名、邮箱、服务器地址等敏感信息）。" />
             </Border>
@@ -178,8 +180,10 @@
                     <Run Text="{Binding ChecksCount, Mode=OneWay, StringFormat={}（{0} 项）}" Foreground="{StaticResource TextSecondary}" FontSize="12" />
                 </TextBlock>
                 <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <Button Content="首次发布…" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"
+                            Command="{Binding FirstPublishCommand}" ToolTip="初始化新仓库并进入首次发布向导" />
                     <Button Content="重新检查" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"
-                            Command="{Binding RunChecksCommand}" />
+                            Command="{Binding RunChecksCommand}" IsEnabled="{Binding CanOperate}" />
                     <Button Content="同步远端" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"
                             Command="{Binding SyncRemoteCommand}" />
                     <Button Content="查看详细报告" Style="{StaticResource SecondaryButton}"
@@ -225,7 +229,8 @@
                                         <Button Grid.Column="2" Content="{Binding FixLabel}" Style="{StaticResource SecondaryButton}"
                                                 Margin="8,0,0,0" Height="26" Padding="8,2" VerticalAlignment="Top"
                                                 Visibility="{Binding FixLabel, Converter={StaticResource StringToVis}}"
-                                                Command="{Binding DataContext.FixCheckCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 Command="{Binding DataContext.FixCheckCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 IsEnabled="{Binding DataContext.CanOperate, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding Id}" />
                                     </Grid>
                                 </DataTemplate>
@@ -322,6 +327,7 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="提交说明" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,12,0" />
                             <ComboBox Width="150" ItemsSource="{Binding CommitPrefixes}"
+                                      IsEnabled="{Binding CanOperate}"
                                       SelectedItem="{Binding SelectedCommitPrefix, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                       ToolTip="选择提交类型，最终提交仍使用标准前缀">
                                 <ComboBox.ItemTemplate>
@@ -332,7 +338,7 @@
                             </ComboBox>
                         </StackPanel>
                         <TextBox Margin="0,6,0,0" Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="{Binding CommitMessage}" />
+                                 ToolTip="{Binding CommitMessage}" IsEnabled="{Binding CanOperate}" />
                         <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextSecondary}">
                             <Run Text="最终提交：" />
                             <Run Text="{Binding CommitMessage, Mode=OneWay}" FontFamily="Consolas" />

@@ -46,7 +46,7 @@ public static class BuildTargetResolver
 {
     private static readonly string[] SolutionExtensions = { ".sln", ".slnx" };
     private static readonly string[] ExcludedDirectories =
-        { ".git", "bin", "obj", "node_modules", ".vs", ".idea", ".claude", ".reasonix" };
+        { ".git", "bin", "obj", "node_modules", ".vs", ".idea", ".claude", ".reasonix", ".serena" };
 
     private const int MaxDepth = 8;
 
@@ -150,6 +150,10 @@ public static class BuildTargetResolver
         foreach (var d in dir.EnumerateDirectories())
         {
             if (ExcludedDirectories.Contains(d.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if ((d.Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 continue;
             }

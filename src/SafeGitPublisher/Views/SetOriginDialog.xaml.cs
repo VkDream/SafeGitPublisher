@@ -48,9 +48,9 @@ public partial class SetOriginDialog : Window
         if (malformed)
         {
             var fix = suggested == null ? string.Empty : $"\n\n建议改为：{suggested}";
-            var go = MessageBox.Show($"URL 疑似异常：\n{url}\n{reason}{fix}\n\n仍要保存吗？",
-                "SafeGitPublisher", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (go != MessageBoxResult.Yes) return;
+            MessageBox.Show($"URL 未通过安全校验：\n{GitRemoteService.RedactForDisplay(url)}\n{reason}{fix}",
+                "SafeGitPublisher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
         }
 
         if (_data.CurrentUrl != null && ReplaceCheck.IsChecked != true)

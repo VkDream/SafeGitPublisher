@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using SafeGitPublisher.Models;
 
@@ -75,6 +76,8 @@ public sealed class ProcessRunner
 
         var stdoutLines = new List<string>();
         var stderrLines = new List<string>();
+        var stdoutClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stderrClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var startedAt = DateTime.UtcNow;
 
         try
@@ -90,22 +93,28 @@ public sealed class ProcessRunner
             throw new ProcessLaunchException(request.FileName, ex);
         }
 
-        void OnOut(string? data)
+        void OnOut(string data)
         {
-            if (data == null) return;
             lock (stdoutLines) stdoutLines.Add(data);
             request.OnStdoutLine?.Invoke(data);
         }
 
-        void OnErr(string? data)
+        void OnErr(string data)
         {
-            if (data == null) return;
             lock (stderrLines) stderrLines.Add(data);
             request.OnStderrLine?.Invoke(data);
         }
 
-        proc.OutputDataReceived += (_, e) => OnOut(e.Data);
-        proc.ErrorDataReceived += (_, e) => OnErr(e.Data);
+        proc.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data == null) stdoutClosed.TrySetResult();
+            else OnOut(e.Data);
+        };
+        proc.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data == null) stderrClosed.TrySetResult();
+            else OnErr(e.Data);
+        };
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
@@ -159,20 +168,193 @@ public sealed class ProcessRunner
             }
         }
 
+        // 进程退出不等于异步输出事件已经全部派发。等待两个重定向管道报告 EOF，
+        // 避免用固定延时猜测，从而丢失尾部的构建或 Git 错误信息。
+        var outputDrainFailed = false;
+        try
+        {
+            await Task.WhenAll(stdoutClosed.Task, stderrClosed.Task).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException)
+        {
+            // 安全检查不能依赖可能缺少尾部内容的 stdout/stderr。
+            // 将管道未完整关闭标记为超时失败，让上层 Gate 失败关闭。
+            outputDrainFailed = true;
+        }
+
         var duration = DateTime.UtcNow - startedAt;
 
-        // 确保输出缓冲读取完成
-        await Task.Delay(50);
+        string[] stdoutSnapshot;
+        string[] stderrSnapshot;
+        lock (stdoutLines) stdoutSnapshot = stdoutLines.ToArray();
+        lock (stderrLines) stderrSnapshot = stderrLines.ToArray();
+        if (outputDrainFailed)
+        {
+            stderrSnapshot = stderrSnapshot.Append("进程输出管道未完整关闭，结果不可信。").ToArray();
+        }
 
         return new CommandResult
         {
-            ExitCode = proc.HasExited ? proc.ExitCode : null,
+            ExitCode = !outputDrainFailed && proc.HasExited ? proc.ExitCode : null,
+            Canceled = canceled,
+            TimedOut = timedOut || outputDrainFailed,
+            Duration = duration,
+            Stdout = stdoutSnapshot,
+            Stderr = stderrSnapshot
+        };
+    }
+
+    /// <summary>
+    /// 执行进程并把 stdout 原始字节直接写入指定文件。此路径禁止文本解码，适用于 Git blob；
+    /// stderr 仍按严格 UTF-8 行读取，仅用于脱敏后的错误摘要。输出文件由调用方负责 finally 清理。
+    /// </summary>
+    public async Task<CommandResult> RunRawStdoutToFileAsync(ProcessRequest request, string outputPath, long maxBytes, CancellationToken cancellationToken)
+    {
+        if (maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        var fullOutputPath = Path.GetFullPath(outputPath);
+        var parent = Path.GetDirectoryName(fullOutputPath);
+        if (string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent))
+        {
+            throw new DirectoryNotFoundException("原始 stdout 输出目录不存在。");
+        }
+
+        var psi = new ProcessStartInfo(request.FileName)
+        {
+            WorkingDirectory = request.WorkingDirectory ?? Environment.CurrentDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = request.StandardInputText != null,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            StandardErrorEncoding = new UTF8Encoding(false)
+        };
+        foreach (var argument in request.Arguments) psi.ArgumentList.Add(argument);
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var stderrLines = new List<string>();
+        var stderrClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            if (!process.Start()) return new CommandResult { ExitCode = null, Duration = DateTime.UtcNow - startedAt };
+        }
+        catch (Exception ex)
+        {
+            throw new ProcessLaunchException(request.FileName, ex);
+        }
+
+        process.ErrorDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data == null)
+            {
+                stderrClosed.TrySetResult();
+                return;
+            }
+            lock (stderrLines) stderrLines.Add(eventArgs.Data);
+            request.OnStderrLine?.Invoke(eventArgs.Data);
+        };
+        process.BeginErrorReadLine();
+
+        if (request.StandardInputText != null)
+        {
+            try
+            {
+                await process.StandardInput.WriteAsync(request.StandardInputText);
+                process.StandardInput.Close();
+            }
+            catch
+            {
+                // 进程提前退出，最终以退出码失败关闭。
+            }
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(request.Timeout);
+        var canceled = false;
+        var timedOut = false;
+        Exception? copyFailure = null;
+        try
+        {
+            await using var output = new FileStream(fullOutputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                bufferSize: 64 * 1024, options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var copyTask = CopyRawWithLimitAsync(process.StandardOutput.BaseStream, output, maxBytes, timeoutCts.Token);
+            var waitTask = process.WaitForExitAsync(timeoutCts.Token);
+            try
+            {
+                await Task.WhenAll(copyTask, waitTask);
+                await output.FlushAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                canceled = cancellationToken.IsCancellationRequested;
+                timedOut = !canceled;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                copyFailure = ex;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // 文件创建、Flush 或 Dispose 失败同样必须失败关闭，
+            // 并由 finally 终止可能仍在输出的子进程。
+            copyFailure = ex;
+        }
+        finally
+        {
+            if ((canceled || timedOut || copyFailure != null) && !process.HasExited)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch
+                {
+                    // Kill 失败会由 ExitCode=null/原始复制错误继续失败关闭。
+                }
+            }
+        }
+
+        try
+        {
+            await stderrClosed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException)
+        {
+            copyFailure ??= new IOException("stderr 管道未完整关闭。");
+        }
+
+        string[] stderrSnapshot;
+        lock (stderrLines) stderrSnapshot = stderrLines.ToArray();
+        if (copyFailure != null)
+        {
+            stderrSnapshot = stderrSnapshot.Append($"原始 stdout 写入失败（{copyFailure.GetType().Name}）。").ToArray();
+        }
+        return new CommandResult
+        {
+            ExitCode = copyFailure == null && process.HasExited ? process.ExitCode : null,
             Canceled = canceled,
             TimedOut = timedOut,
-            Duration = duration,
-            Stdout = stdoutLines.ToArray(),
-            Stderr = stderrLines.ToArray()
+            Duration = DateTime.UtcNow - startedAt,
+            Stdout = Array.Empty<string>(),
+            Stderr = stderrSnapshot
         };
+    }
+
+    private static async Task CopyRawWithLimitAsync(Stream source, Stream destination, long maxBytes, CancellationToken ct)
+    {
+        var buffer = new byte[64 * 1024];
+        long total = 0;
+        while (true)
+        {
+            var count = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (count == 0) break;
+            total = checked(total + count);
+            if (total > maxBytes) throw new InvalidDataException($"原始 stdout 超过允许上限 {maxBytes} 字节。");
+            await destination.WriteAsync(buffer.AsMemory(0, count), ct);
+        }
     }
 }
 

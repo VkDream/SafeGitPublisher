@@ -168,8 +168,15 @@ public sealed class PreflightService
         var status = await _git.StatusPorcelainAsync(root, ct);
         if (status.Canceled)
         {
-            log?.Invoke(LogLevel.Info, "检查已取消");
-            ctx.Report = report;
+            throw new OperationCanceledException(ct);
+        }
+        if (!status.Success)
+        {
+            Add("status", "工作区状态", CheckStatus.Blocked,
+                "无法读取 git status，已按失败关闭处理。",
+                blocksCommit: true, blocksPush: true,
+                details: GitRemoteService.RedactOutput(status.StdErrText));
+            log?.Invoke(LogLevel.Blocked, "git status 执行失败，禁止发布");
             return ctx;
         }
 
@@ -225,7 +232,19 @@ public sealed class PreflightService
         }
 
         // ---------- 4) 敏感文件 ----------
-        var tracked = GitRepositoryInspector.ParseLsFiles((await _git.LsFilesAsync(root, ct)).Stdout);
+        var lsFiles = await _git.LsFilesAsync(root, ct);
+        if (lsFiles.Canceled) throw new OperationCanceledException(ct);
+        if (!lsFiles.Success)
+        {
+            Add("sensitive_files", "敏感文件", CheckStatus.Blocked,
+                "无法读取 Git 已跟踪文件，不能完成敏感文件检查。",
+                blocksCommit: true, blocksPush: true,
+                details: GitRemoteService.RedactOutput(lsFiles.StdErrText));
+            log?.Invoke(LogLevel.Blocked, "git ls-files 执行失败，禁止发布");
+            return ctx;
+        }
+
+        var tracked = GitRepositoryInspector.ParseLsFiles(lsFiles.Stdout);
         var sensitive = await _sensitiveScanner.ScanAsync(root, changes, tracked, ct);
         ctx.SensitiveFindings.AddRange(sensitive.Findings);
         ctx.IgnoredSafePaths.AddRange(sensitive.IgnoredSafePaths);
@@ -285,8 +304,11 @@ public sealed class PreflightService
         }
         else if (highSecrets.Count > 0)
         {
-            Add("secret_scan", "Secret 扫描", CheckStatus.Warning,
-                $"发现 {highSecrets.Count} 处疑似明文凭据，请人工确认",
+            // 界面没有针对 High 明文凭据的独立放行确认合同，
+            // 因此必须与最终 index/outgoing Gate 保持一致，在预检阶段直接阻断。
+            Add("secret_scan", "Secret 扫描", CheckStatus.Blocked,
+                $"发现 {highSecrets.Count} 处疑似明文凭据，请处理后重试",
+                blocksCommit: true, blocksPush: true,
                 details: string.Join("\n", highSecrets.Select(f => $"{f.File} {f.Preview}")));
             log?.Invoke(LogLevel.Warn, $"Secret 扫描发现 {highSecrets.Count} 处高危疑似凭据");
         }
@@ -299,7 +321,8 @@ public sealed class PreflightService
         }
         else
         {
-            Add("secret_scan", "Secret 扫描", CheckStatus.Pass, "未发现凭据（共扫描 " + secretTargets.Count + " 个文件）");
+            Add("secret_scan", "Secret 扫描", CheckStatus.Pass,
+                $"未发现凭据（实际扫描 {secretResult.ScannedCount} 个文本文件，安全跳过 {secretResult.SkippedCount} 个二进制文件）");
             log?.Invoke(LogLevel.Pass, "Secret 扫描通过");
         }
 
@@ -353,10 +376,20 @@ public sealed class PreflightService
         }
 
         // ---------- 8) Remote ----------
-        var remoteInfo = GitRepositoryInspector.ParseRemoteV((await _git.RemoteVAsync(root, ct)).Stdout);
+        var remoteResult = await _git.RemoteVAsync(root, ct);
+        if (remoteResult.Canceled) throw new OperationCanceledException(ct);
+        var remoteInfo = GitRepositoryInspector.ParseRemoteV(remoteResult.Stdout);
         ctx.Remote = remoteInfo;
 
-        if (!remoteInfo.HasRemote)
+        if (!remoteResult.Success)
+        {
+            Add("remote", "Remote", CheckStatus.Blocked,
+                "无法读取 Remote 配置，已禁止 Push。",
+                blocksPush: true,
+                details: GitRemoteService.RedactOutput(remoteResult.StdErrText));
+            log?.Invoke(LogLevel.Blocked, "git remote -v 执行失败，禁止 Push");
+        }
+        else if (!remoteInfo.HasRemote)
         {
             Add("remote", "Remote", CheckStatus.Warning,
                 "未配置 origin，无法 Push",
@@ -365,14 +398,14 @@ public sealed class PreflightService
                 details: "可在设置 origin 对话框中输入 https://github.com/你的账号/仓库名.git");
             log?.Invoke(LogLevel.Warn, "未配置 origin，Push 不可用");
         }
-        else if (remoteInfo.IsMalformed)
+        else if (remoteInfo.IsMalformed || string.IsNullOrWhiteSpace(remoteInfo.ExactEffectivePushUrl))
         {
             Add("remote", "Remote", CheckStatus.Blocked,
-                $"remote 地址异常：{remoteInfo.MalformedReason}",
+                $"remote Push 地址异常：{(string.IsNullOrWhiteSpace(remoteInfo.MalformedReason) ? "未配置可验证的 Push URL" : remoteInfo.MalformedReason)}",
                 fix: "修复 remote 地址",
                 blocksPush: true,
-                details: $"当前：{remoteInfo.FetchUrl}\n建议：{remoteInfo.SuggestedUrl}");
-            log?.Invoke(LogLevel.Blocked, $"remote 地址异常：{remoteInfo.FetchUrl}");
+                details: $"Fetch：{remoteInfo.FetchUrl}\nPush：{remoteInfo.PushUrl}\n建议：{remoteInfo.SuggestedUrl}");
+            log?.Invoke(LogLevel.Blocked, $"remote Push 地址异常：{remoteInfo.PushDisplay}");
         }
         else
         {
@@ -382,13 +415,30 @@ public sealed class PreflightService
         }
 
         // ---------- 9) 分支 ----------
-        var branch = await _git.CurrentBranchAsync(root, ct);
+        var branchResult = await _git.RunGitAsync(root, new[] { "branch", "--show-current" }, ct);
+        if (branchResult.Canceled) throw new OperationCanceledException(ct);
+        var branch = branchResult.Success ? branchResult.Stdout.FirstOrDefault()?.Trim() : null;
         ctx.Branch = branch;
-        ctx.HasUpstream = await _git.HasUpstreamAsync(root, ct);
 
-        if (string.IsNullOrWhiteSpace(branch))
+        var upstreamResult = await _git.RunGitAsync(root,
+            new[] { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}" }, ct);
+        if (upstreamResult.Canceled) throw new OperationCanceledException(ct);
+        ctx.HasUpstream = upstreamResult.Success;
+
+        if (!branchResult.Success)
         {
-            Add("branch", "分支", CheckStatus.Info, "当前处于 detached HEAD，建议切回分支");
+            Add("branch", "分支", CheckStatus.Blocked,
+                "无法读取当前分支，已禁止 Push。",
+                blocksPush: true,
+                details: GitRemoteService.RedactOutput(branchResult.StdErrText));
+            log?.Invoke(LogLevel.Blocked, "读取当前分支失败，禁止 Push");
+        }
+        else if (string.IsNullOrWhiteSpace(branch))
+        {
+            Add("branch", "分支", CheckStatus.Blocked,
+                "当前处于 detached HEAD，禁止安全提交并上传；请先切回明确分支。",
+                blocksPush: true);
+            log?.Invoke(LogLevel.Blocked, "detached HEAD 禁止 Push");
         }
         else if (branch.Equals("master", StringComparison.OrdinalIgnoreCase))
         {
@@ -461,6 +511,7 @@ public sealed class PreflightService
                 // 合同：多候选且无法自动确定 → Warning + 需要用户明确选择，不猜测
                 Add("build", "项目构建", CheckStatus.Warning,
                     "存在多个构建目标，无法自动确定（需人工选择）",
+                    blocksPush: settings.BuildBeforeCommit,
                     details: $"{build.SkipReason}\n本次检查已跳过构建，请确认实际构建目标后重新检查。");
                 log?.Invoke(LogLevel.Warn, "构建目标歧义，已跳过构建，需人工选择");
             }
@@ -505,7 +556,11 @@ public sealed class PreflightService
             }
             else
             {
-                Add("build", "项目构建", CheckStatus.Warning, build.SkipReason);
+                Add("build", "项目构建", CheckStatus.Warning, build.SkipReason,
+                    blocksPush: settings.BuildBeforeCommit,
+                    details: settings.BuildBeforeCommit
+                        ? "当前设置要求提交前构建，但本次未实际运行 Build，已禁止 Push。"
+                        : build.SkipReason);
                 log?.Invoke(LogLevel.Warn, build.SkipReason);
             }
         }
@@ -534,14 +589,5 @@ public sealed class PreflightService
         }
 
         return ctx;
-    }
-}
-
-internal static class GitFileChangeEx
-{
-    /// <summary>是否属于“不会新增内容”的变更（删除/仅重命名删除侧）。</summary>
-    public static bool IsDeletedLike(this GitFileChange c)
-    {
-        return c.StatusCode.StartsWith("D", StringComparison.Ordinal);
     }
 }

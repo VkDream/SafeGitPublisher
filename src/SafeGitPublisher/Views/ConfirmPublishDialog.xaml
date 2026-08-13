@@ -22,6 +22,7 @@
                         <local:RowPair Label="仓库" Value="{Binding RepoDisplay}" />
                         <local:RowPair Label="分支" Value="{Binding Branch}" />
                         <local:RowPair Label="Remote" Value="{Binding RemoteDisplay}" />
+                        <local:RowPair Label="Push URL" Value="{Binding PushUrlDisplay}" />
                         <local:RowPair Label="作者" Value="{Binding AuthorDisplay}" />
                         <local:RowPair Label="提交说明" Value="{Binding CommitMessage}" />
                         <local:RowPair Label="变更" Value="{Binding ChangeCount, StringFormat={}{0} 个文件}" />
@@ -43,6 +44,14 @@
                             <Run Text="图片：" />
                             <Run Text="{Binding ImageConfirmedText, Mode=OneWay}" />
                         </TextBlock>
+                        <CheckBox x:Name="ImageConfirmationCheck"
+                                  Margin="0,8,0,0"
+                                  Visibility="{Binding RequiresImageConfirmation, Converter={StaticResource BoolToVis}}"
+                                  IsChecked="{Binding ImageConfirmed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Checked="OnImageConfirmationChanged"
+                                  Unchecked="OnImageConfirmationChanged"
+                                  AutomationProperties.Name="确认图片已脱敏"
+                                  Content="我已检查本次新增/修改的图片，确认不含客户名称、内部项目名、用户名、邮箱或服务器地址。" />
                         <TextBlock Margin="0,4,0,0">
                             <Run Text="Build：" />
                             <Run Text="{Binding BuildDisplay, Mode=OneWay}" />

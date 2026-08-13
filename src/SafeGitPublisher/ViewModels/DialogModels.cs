@@ -6,7 +6,7 @@ namespace SafeGitPublisher.ViewModels;
 /// <summary>
 /// 最终确认页（确认提交并上传）的展示数据。
 /// </summary>
-public sealed class ConfirmPublishData
+public sealed class ConfirmPublishData : ViewModelBase
 {
     public required string RepositoryRoot { get; init; }
 
@@ -17,6 +17,9 @@ public sealed class ConfirmPublishData
     public string Branch { get; init; } = "-";
 
     public string RemoteDisplay { get; init; } = "-";
+
+    /// <summary>实际 Push 目标的安全展示文本（凭据已脱敏）。</summary>
+    public string PushUrlDisplay { get; init; } = "（未配置）";
 
     public string AuthorDisplay { get; init; } = "-";
 
@@ -30,9 +33,25 @@ public sealed class ConfirmPublishData
 
     public int BlockedCount { get; init; }
 
-    public bool ImageConfirmed { get; init; }
+    private bool _imageConfirmed;
+
+    /// <summary>本次发布对话中的图片脱敏确认；只由当前图片指纹消费。</summary>
+    public bool ImageConfirmed
+    {
+        get => _imageConfirmed;
+        set
+        {
+            if (SetProperty(ref _imageConfirmed, value))
+            {
+                OnPropertyChanged(nameof(ImageConfirmedText));
+            }
+        }
+    }
 
     public bool HasNewImages { get; init; }
+
+    /// <summary>最终确认页是否必须要求用户勾选图片脱敏确认。</summary>
+    public bool RequiresImageConfirmation { get; init; }
 
     public string BuildDisplay { get; init; } = "-";
 
@@ -45,8 +64,8 @@ public sealed class ConfirmPublishData
     public string ImageConfirmedText => !HasNewImages ? "无新图片" : (ImageConfirmed ? "已确认脱敏" : "未确认脱敏（禁止 Push）");
 
     public string UpstreamNote => WillSetUpstream
-        ? $"分支 {Branch} 尚无 upstream，将执行：git push -u origin {Branch}"
-        : "将使用已配置的 upstream 直接推送。";
+        ? $"分支 {Branch} 尚无 upstream，将推送到 origin 并设置 upstream。"
+        : "将使用已配置的 upstream 推送；请核对上方 Push URL。";
 }
 
 /// <summary>

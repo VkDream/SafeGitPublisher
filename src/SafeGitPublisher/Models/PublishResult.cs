@@ -7,10 +7,21 @@ public sealed class PublishResult
 {
     public bool Committed { get; init; }
 
+    /// <summary>
+    /// Git 确认 HEAD 已变化，但该提交未通过完整安全合同或结果不可确定。
+    /// UI 必须告警而不得显示“提交成功”。
+    /// </summary>
+    public bool CommitCreatedButUnverified { get; init; }
+
     public bool Pushed { get; init; }
 
-    /// <summary>是否因 staged 复检发现 BLOCKED 而执行了 git reset 并中止。</summary>
+    /// <summary>
+    /// 兼容旧 UI 的中止标志。新流程不会简单清空暂存区，而是恢复到操作前的 index 快照。
+    /// </summary>
     public bool UnstagedAfterBlocked { get; init; }
+
+    /// <summary>安全中止后是否已成功恢复操作前的 index（含用户原有部分暂存状态）。</summary>
+    public bool IndexRestoredAfterAbort { get; init; }
 
     /// <summary>
     /// true 表示本次中止属于“非异常”提示（如工作区无变更），

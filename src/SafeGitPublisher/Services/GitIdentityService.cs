@@ -46,12 +46,12 @@ public sealed class GitIdentityService
         var r1 = await _git.ConfigSetLocalAsync(repoRoot, "user.name", name, ct);
         if (!r1.Success)
         {
-            return (false, $"设置 user.name 失败：{r1.StdErrText}");
+            return (false, $"设置 user.name 失败：{GitRemoteService.RedactOutput(r1.StdErrText)}");
         }
         var r2 = await _git.ConfigSetLocalAsync(repoRoot, "user.email", email, ct);
         if (!r2.Success)
         {
-            return (false, $"设置 user.email 失败：{r2.StdErrText}");
+            return (false, $"设置 user.email 失败：{GitRemoteService.RedactOutput(r2.StdErrText)}");
         }
         return (true, string.Empty);
     }

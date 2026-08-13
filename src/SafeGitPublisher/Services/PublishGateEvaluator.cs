@@ -78,6 +78,7 @@ public static class PublishGateEvaluator
             {
                 "remote" => "未配置 Remote，无法 Push",
                 "build" => "构建未通过，禁止 Push",
+                "branch" => "当前分支状态不允许 Push",
                 "image_privacy" => "新增图片未确认脱敏，禁止 Push",
                 _ => "存在阻断 Push 的检查项，请先处理"
             };

@@ -1,5 +1,14 @@
 # SafeGitPublisher CHANGELOG
 
+## v1.0.1（2026-08-12，安全加固，待 GUI/真实 Git 验收）
+
+- 对抗审查修复：预检快照新鲜度、全局操作租约、图片确认指纹、设置/同步后 Gate 失效、首次发布向导可达性与流程自重入。
+- 发布链安全：精确 origin push URL/branch/ref 两次校验；detached HEAD 在提交前阻断；commit 任何失败都失败关闭；index tree 快照精确恢复；已扫描 tree 与实际 commit tree 绑定，拦截 hook 扫描后改写；Push 前扫描真实待推送历史。
+- 扫描安全：Secret 支持 UTF-8/GB18030/UTF-16/UTF-32 BOM、>2MiB 文本与无扩展名；读取 index/outgoing Git blob 原始字节；不按 `.png/.dll` 扩展名盲信跳过；扫描/临时文件清理不完整均失败关闭；明文 High 凭据统一硬阻断；>100MiB 始终硬阻断。
+- UI：提交类型中文显示但内部保留 Conventional Commits 前缀；最终确认页可完成当前图片指纹的脱敏确认；确认页显示脱敏 Push URL；Git 错误输出进入 UI/日志前脱敏。
+- 自扫描修复（2026-08-13）：对抗测试中的 GitHub Token 样本改为运行时分段生成，源码不再保存完整凭据或敏感赋值形态；发布说明中的内网地址/凭据示例改为抽象描述；扫描规则未放宽，断言收紧为必须命中 `ghp / Blocked`；新增安全测试源码与发布说明自扫描防复发用例。
+- 验证：Debug/Release 均 0 Warning / 0 Error；不启动 GUI/Git 的纯测试 139/139（339 assertions）；XAML XML 解析通过。本轮未运行 E2E、GUI 冒烟、真实 Git 提交/Push，未创建 Tag/Release。
+
 ## v1.0.0（2026-08-07，已真实自发布到 GitHub）
 
 ### 里程碑：真实自发布（SELF-PUBLISH 闭环）
@@ -18,7 +27,7 @@
   - **支持 `.slnx`**（与 .sln 同优先级）。
   - `DotNetBuildService` 改为 `dotnet build <解析出的完整路径>`（消除 MSB1009，绝不再传目录名+WorkDir 组合），`IsDotNetProject` 复用解析器。
   - Build UI：报告显示 `Build Target`（文件名，如 `SafeGitPublisher.slnx`）+ 命令摘要（`dotnet build SafeGitPublisher.slnx`）；失败时显示 Target / Exit Code / 关键错误行摘要（≤3 行）；歧义 → Warning（需人工选择）不阻断提交；非 .NET → Info。
-- **Secret 扫描自指/种子误报**：扫描器将自身规则文本、代码变量赋值（`var secret =`/`var server =`）、测试种子字面量（`ghp_`/`password =`/`192.168.1.23`）判为凭据，导致含测试工程的真实仓库无法通过 Secret Scan。修复：规则/注释避开键名+"="字面量；`var serverMatchResult` 重命名；测试种子改为运行时拼接（文件文本不含完整模式，运行断言行为不变）。
+- **Secret 扫描自指/种子误报**：扫描器曾把自身规则说明、敏感键赋值示例、凭据格式样例及内网地址样例识别为风险，导致含测试工程的真实仓库无法通过 Secret Scan。修复：文档不再保存可触发规则的完整样例；规则说明与测试种子使用抽象描述或运行时拼接（源码文本不含完整模式，运行断言行为不变）。
 - **首次发布 .gitignore 回归验证**：生成推荐 .gitignore 后 `bin/obj`、`*.dll/*.pdb/*.deps.json/*.runtimeconfig*` 不再进入"本次变更"，不再计入 Sensitive BLOCKED；Secret Scan 不再扫描已忽略输出。
 - 安全忽略展示聚合：`ReportDialog` 已忽略项改为"已安全忽略 N 个"摘要 + 仅展示前 50 条 + "超过 50 条仅显示前 50"提示（新增 `CountGreaterThanConverter`），避免生成文件数百条刷爆 UI。
 
