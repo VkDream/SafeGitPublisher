@@ -16,6 +16,18 @@ public sealed class PublishResult
     public bool Pushed { get; init; }
 
     /// <summary>
+    /// Push 的可确认状态。Unknown 表示命令取消、超时或执行后无法核验远端，
+    /// UI 必须进入“先重新核验、禁止盲目重推”的恢复流程。
+    /// </summary>
+    public PushDeliveryState PushState { get; init; }
+
+    /// <summary>本次已创建或仅上传所锁定的完整提交 OID。</summary>
+    public string? CommitOid { get; init; }
+
+    /// <summary>true 表示下一次动作必须先 PrepareExistingPushAsync 核验远端状态。</summary>
+    public bool RequiresPushReconciliation { get; init; }
+
+    /// <summary>
     /// 兼容旧 UI 的中止标志。新流程不会简单清空暂存区，而是恢复到操作前的 index 快照。
     /// </summary>
     public bool UnstagedAfterBlocked { get; init; }

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:SafeGitPublisher.Views"
         Icon="pack://application:,,,/SafeGitPublisher;component/Assets/SafeGitPublisher.ico"
-        Title="准备发布" Width="700" Height="560" MinHeight="520" WindowStartupLocation="CenterOwner"
+        Title="{Binding DialogTitle}" Width="700" Height="590" MinHeight="540" WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize" Background="{StaticResource PageBg}">
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -12,10 +12,17 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Style="{StaticResource SectionTitle}" Text="准备发布" />
+        <TextBlock Grid.Row="0" Style="{StaticResource SectionTitle}" Text="{Binding DialogTitle}" />
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <Border Background="{StaticResource CardBg}" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="12" Margin="0,0,0,12"
+                        Visibility="{Binding PushExistingOnly, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding ActionSummary}" TextWrapping="Wrap" FontWeight="SemiBold"
+                               AutomationProperties.Name="本次发布操作说明" />
+                </Border>
+
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <local:RowPair Label="项目路径" Value="{Binding ProjectPath}" />
@@ -23,16 +30,19 @@
                         <local:RowPair Label="分支" Value="{Binding Branch}" />
                         <local:RowPair Label="Remote" Value="{Binding RemoteDisplay}" />
                         <local:RowPair Label="Push URL" Value="{Binding PushUrlDisplay}" />
+                        <local:RowPair Label="已有提交 OID" Value="{Binding CommitOidDisplay}"
+                                       Visibility="{Binding PushExistingOnly, Converter={StaticResource BoolToVis}}" />
                         <local:RowPair Label="作者" Value="{Binding AuthorDisplay}" />
-                        <local:RowPair Label="提交说明" Value="{Binding CommitMessage}" />
-                        <local:RowPair Label="变更" Value="{Binding ChangeCount, StringFormat={}{0} 个文件}" />
+                        <local:RowPair Label="{Binding CommitMessageLabel}" Value="{Binding CommitMessage}" />
+                        <local:RowPair Label="工作区操作" Value="{Binding ChangeDisplay}" />
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                     <StackPanel>
-                        <TextBlock Text="安全检查" FontWeight="SemiBold" Margin="0,0,0,6" />
-                        <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding SafetySectionTitle}" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding ShowCheckCounts, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="通过" Foreground="{StaticResource PassBrush}" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding PassCount}" Margin="6,0,16,0" />
                             <TextBlock Text="警告" Foreground="{StaticResource WarningBrush}" FontWeight="SemiBold" />
@@ -40,6 +50,9 @@
                             <TextBlock Text="阻断" Foreground="{StaticResource BlockedBrush}" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding BlockedCount}" Margin="6,0,0,0" />
                         </StackPanel>
+                        <TextBlock Text="{Binding ExistingPushSafetyNote}" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Visibility="{Binding PushExistingOnly, Converter={StaticResource BoolToVis}}" />
                         <TextBlock Margin="0,10,0,0">
                             <Run Text="图片：" />
                             <Run Text="{Binding ImageConfirmedText, Mode=OneWay}" />
@@ -51,7 +64,7 @@
                                   Checked="OnImageConfirmationChanged"
                                   Unchecked="OnImageConfirmationChanged"
                                   AutomationProperties.Name="确认图片已脱敏"
-                                  Content="我已检查本次新增/修改的图片，确认不含客户名称、内部项目名、用户名、邮箱或服务器地址。" />
+                                  Content="{Binding ImageConfirmationContent}" />
                         <TextBlock Margin="0,4,0,0">
                             <Run Text="Build：" />
                             <Run Text="{Binding BuildDisplay, Mode=OneWay}" />
@@ -65,8 +78,11 @@
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="100" Margin="0,0,12,0" Click="OnCancel" />
-            <Button x:Name="ConfirmButton" Style="{StaticResource PrimaryButton}" Width="170" Click="OnConfirm" />
+            <Button Content="取消" Style="{StaticResource SecondaryButton}" Width="100" Margin="0,0,12,0"
+                    IsCancel="True" Click="OnCancel" />
+            <Button x:Name="ConfirmButton" Content="{Binding ConfirmButtonText}" Style="{StaticResource PrimaryButton}"
+                    Width="170" IsDefault="True" Click="OnConfirm"
+                    AutomationProperties.Name="{Binding ConfirmButtonText}" />
         </StackPanel>
     </Grid>
 </Window>

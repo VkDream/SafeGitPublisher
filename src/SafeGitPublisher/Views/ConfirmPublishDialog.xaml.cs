@@ -16,7 +16,6 @@ public partial class ConfirmPublishDialog : Window
         InitializeComponent();
         _data = data;
         DataContext = data;
-        ConfirmButton.Content = data.CommitOnly ? "确认提交" : "确认提交并 Push";
         _initialized = true;
         UpdateConfirmState();
     }
@@ -29,10 +28,12 @@ public partial class ConfirmPublishDialog : Window
 
     private void UpdateConfirmState()
     {
-        var hasChanges = _data.ChangeCount > 0;
+        // 只上传模式处理的是已存在的提交，工作区为 0 变更是正常且必要的状态。
+        // 是否允许上传由 ViewModel/服务在打开确认页前后分别复检，此处只处理对话框交互门禁。
+        var hasRequiredInput = _data.PushExistingOnly || _data.ChangeCount > 0;
         var imageReady = !_data.RequiresImageConfirmation || _data.ImageConfirmed;
-        ConfirmButton.IsEnabled = hasChanges && imageReady;
-        ConfirmButton.ToolTip = !hasChanges
+        ConfirmButton.IsEnabled = hasRequiredInput && imageReady;
+        ConfirmButton.ToolTip = !hasRequiredInput
             ? "当前没有可提交的变更"
             : !imageReady ? "请先确认本次图片已完成脱敏检查" : null;
     }

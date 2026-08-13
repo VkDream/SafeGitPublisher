@@ -78,6 +78,7 @@
                 <RowDefinition Height="Auto" />   <!-- 图片确认 -->
                 <RowDefinition Height="Auto" />   <!-- 检查标题 + 按钮 -->
                 <RowDefinition Height="*" MinHeight="150" />   <!-- 检查项 + 变更 -->
+                <RowDefinition Height="Auto" />   <!-- 已有提交上传恢复 -->
                 <RowDefinition Height="Auto" />   <!-- 提交说明区 -->
                 <RowDefinition Height="1.0*" MinHeight="100" /> <!-- 日志 -->
             </Grid.RowDefinitions>
@@ -317,7 +318,7 @@
             </Grid>
 
             <!-- ===== 提交说明区 ===== -->
-            <Border Grid.Row="7" Style="{StaticResource Card}" Margin="0,10,0,0">
+            <Border Grid.Row="8" Style="{StaticResource Card}" Margin="0,10,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -355,8 +356,32 @@
                 </Grid>
             </Border>
 
+            <!-- 独立恢复入口：不会放宽普通提交/上传 Gate；命令执行时由服务重新验证已有提交。 -->
+            <Border Grid.Row="7" Style="{StaticResource Card}" Margin="0,10,0,0" Padding="12,10"
+                    BorderBrush="{StaticResource WarningBrush}"
+                    Visibility="{Binding HasExistingCommitRecovery, Converter={StaticResource BannerVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                        <TextBlock Text="已有提交上传恢复" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding ExistingCommitRecoverySummary}" Margin="0,3,0,0"
+                                   Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="检查并上传已有提交" Style="{StaticResource SecondaryButton}"
+                            MinWidth="178" Height="34" VerticalAlignment="Center"
+                            Command="{Binding PushExistingCommitCommand}"
+                            IsEnabled="{Binding CanPushExistingCommit}"
+                            ToolTip="{Binding ExistingCommitRecoveryTooltip}"
+                            AutomationProperties.Name="检查并上传已有提交"
+                            AutomationProperties.HelpText="重新检查已有提交、分支和远端后只执行上传，不会再次创建提交" />
+                </Grid>
+            </Border>
+
             <!-- ===== 日志 ===== -->
-            <Border Grid.Row="8" Style="{StaticResource Card}" Margin="0,10,0,0">
+            <Border Grid.Row="9" Style="{StaticResource Card}" Margin="0,10,0,0">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
                         <TextBlock Style="{StaticResource SectionTitle}" Text="日志" VerticalAlignment="Center" />

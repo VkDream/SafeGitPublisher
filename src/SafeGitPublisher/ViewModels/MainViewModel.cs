@@ -35,6 +35,8 @@ public sealed class MainViewModel : ViewModelBase
     private string? _lastPreflightChangeFingerprint;
     private string? _currentImageFingerprint;
     private string? _confirmedImageFingerprint;
+    private const string DefaultExistingCommitRecoverySummary =
+        "如果提交已经创建但上传失败，可先安全检查已有提交，再单独上传；不会重复创建提交。";
 
     public MainViewModel()
     {
@@ -64,6 +66,7 @@ public sealed class MainViewModel : ViewModelBase
         // 即使按钮被绕过（快捷键 / 直接调用 Execute）也无法越权执行。
         CommitOnlyCommand = new AsyncRelayCommand(_ => PublishAsync(commitOnly: true), _ => CanOperate && CanCommit, onException: ex => HandleError(ex));
         SafeCommitAndPushCommand = new AsyncRelayCommand(_ => PublishAsync(commitOnly: false), _ => CanOperate && CanPush, onException: ex => HandleError(ex));
+        PushExistingCommitCommand = new AsyncRelayCommand(_ => PushExistingCommitAsync(), _ => CanPushExistingCommit, onException: ex => HandleError(ex));
         FirstPublishCommand = new AsyncRelayCommand(_ => RunFirstPublishWizardAsync(CommitMessage.Trim(), commitOnly: false), _ => CanStartFirstPublish, onException: ex => HandleError(ex));
         SyncRemoteCommand = new AsyncRelayCommand(_ => SyncRemoteAsync(), _ => CanOperate && LastContext?.RepositoryRoot != null, onException: ex => HandleError(ex));
         ShowReportCommand = new RelayCommand(_ => ShowReportRequested?.Invoke(new ReportData { Context = LastContext ?? new PreflightContext { ProjectPath = string.Empty, Settings = _settings } }));
@@ -89,6 +92,7 @@ public sealed class MainViewModel : ViewModelBase
     public AsyncRelayCommand FixCheckCommand { get; }
     public AsyncRelayCommand CommitOnlyCommand { get; }
     public AsyncRelayCommand SafeCommitAndPushCommand { get; }
+    public AsyncRelayCommand PushExistingCommitCommand { get; }
     public AsyncRelayCommand FirstPublishCommand { get; }
     public AsyncRelayCommand SyncRemoteCommand { get; }
     public RelayCommand ShowReportCommand { get; }
@@ -111,6 +115,7 @@ public sealed class MainViewModel : ViewModelBase
             if (SetProperty(ref _projectPath, value ?? string.Empty))
             {
                 // 路径输入一旦变化，旧仓库报告和图片确认都不再属于当前目标。
+                ExistingCommitRecoverySummary = DefaultExistingCommitRecoverySummary;
                 InvalidatePreflight("项目目录已变化，请重新检查。", resetImageConfirmation: true);
                 OnPropertyChanged(nameof(CanStartFirstPublish));
             }
@@ -189,6 +194,8 @@ public sealed class MainViewModel : ViewModelBase
             {
                 OnPropertyChanged(nameof(CanOperate));
                 OnPropertyChanged(nameof(CanStartFirstPublish));
+                OnPropertyChanged(nameof(CanPushExistingCommit));
+                OnPropertyChanged(nameof(ExistingCommitRecoveryTooltip));
                 // RelayCommand/AsyncRelayCommand 均监听 WPF 全局 RequerySuggested。
                 CommandManager.InvalidateRequerySuggested();
                 RecomputeReport();
@@ -205,6 +212,28 @@ public sealed class MainViewModel : ViewModelBase
 
     /// <summary>忙碌/检查中时禁止发布操作。</summary>
     public bool CanOperate => !IsBusy && !_operationLeaseActive;
+
+    /// <summary>
+    /// 已完成检查的 Git 仓库始终提供“检查已有提交”入口，兼容应用升级前已经留在本地的提交。
+    /// 显示入口不代表允许 Push；真正门禁由每次点击后生成的一次性安全计划决定。
+    /// </summary>
+    public bool HasExistingCommitRecovery => IsGitRepo;
+
+    /// <summary>已有提交恢复命令只依赖仓库身份与全局操作租约，不复用普通 CanPush/工作区 Gate。</summary>
+    public bool CanPushExistingCommit => CanOperate && HasExistingCommitRecovery;
+
+    private string _existingCommitRecoverySummary = DefaultExistingCommitRecoverySummary;
+    public string ExistingCommitRecoverySummary
+    {
+        get => _existingCommitRecoverySummary;
+        private set => SetProperty(ref _existingCommitRecoverySummary, value);
+    }
+
+    public string ExistingCommitRecoveryTooltip => !HasExistingCommitRecovery
+        ? "请先选择并检查 Git 仓库"
+        : !CanOperate
+            ? "请等待当前操作完成"
+            : "重新检查 HEAD、分支、远端和待推送历史；只上传已有提交，不会再次 add 或 commit";
 
     /// <summary>非仓库目录可从主界面直接进入首次发布向导。</summary>
     public bool CanStartFirstPublish => CanOperate
@@ -338,7 +367,16 @@ public sealed class MainViewModel : ViewModelBase
     public bool IsGitRepo
     {
         get => _isGitRepo;
-        private set => SetProperty(ref _isGitRepo, value);
+        private set
+        {
+            if (SetProperty(ref _isGitRepo, value))
+            {
+                OnPropertyChanged(nameof(HasExistingCommitRecovery));
+                OnPropertyChanged(nameof(CanPushExistingCommit));
+                OnPropertyChanged(nameof(ExistingCommitRecoveryTooltip));
+                PushExistingCommitCommand.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     private bool _imageConfirmationRequired;
@@ -498,6 +536,9 @@ public sealed class MainViewModel : ViewModelBase
         _operationLeaseActive = active;
         OnPropertyChanged(nameof(CanOperate));
         OnPropertyChanged(nameof(CanStartFirstPublish));
+        OnPropertyChanged(nameof(CanPushExistingCommit));
+        OnPropertyChanged(nameof(ExistingCommitRecoveryTooltip));
+        PushExistingCommitCommand.NotifyCanExecuteChanged();
         CommandManager.InvalidateRequerySuggested();
     }
 
@@ -544,6 +585,13 @@ public sealed class MainViewModel : ViewModelBase
     private async Task<bool> RunChecksAsync(bool allowOperationLease)
     {
         if (IsBusy || (_operationLeaseActive && !allowOperationLease)) return false;
+
+        if (!allowOperationLease)
+        {
+            // 普通重查、设置保存、Remote 修改或同步后不沿用上一轮恢复提示。
+            // 可执行性始终由下一次 PrepareExistingPushAsync 的新计划决定。
+            ExistingCommitRecoverySummary = DefaultExistingCommitRecoverySummary;
+        }
 
         var path = ProjectPath?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
@@ -761,6 +809,7 @@ public sealed class MainViewModel : ViewModelBase
         // 命令级 CanExecute 同步（防快捷键 / 直接调用）
         CommitOnlyCommand.NotifyCanExecuteChanged();
         SafeCommitAndPushCommand.NotifyCanExecuteChanged();
+        PushExistingCommitCommand.NotifyCanExecuteChanged();
         FirstPublishCommand.NotifyCanExecuteChanged();
         SyncRemoteCommand.NotifyCanExecuteChanged();
         CommandManager.InvalidateRequerySuggested();
@@ -1207,11 +1256,24 @@ public sealed class MainViewModel : ViewModelBase
                         : "发布已中止，但暂存区恢复结果未确认，请人工检查。");
             }
 
-            ShowMessageRequested?.Invoke(
-                result.Pushed ? "发布完成：已提交并推送。" :
-                result.Committed && !result.CommitCreatedButUnverified && string.IsNullOrEmpty(result.Error) ? "提交完成（未推送）。" :
-                result.Error ?? "发布失败。",
-                !(result.Pushed || (result.Committed && !result.CommitCreatedButUnverified && string.IsNullOrEmpty(result.Error))));
+            if (result.PushState == PushDeliveryState.Unknown)
+            {
+                ExistingCommitRecoverySummary = "本地提交已保留，远端接收结果尚未确认。请检查并上传已有提交。";
+                ShowMessageRequested?.Invoke(NetworkRecoveryMessage(), true);
+            }
+            else if (result.PushState == PushDeliveryState.Pending)
+            {
+                ExistingCommitRecoverySummary = "本地提交已保留，尚未开始上传。可检查并上传已有提交。";
+                ShowMessageRequested?.Invoke("本地提交已经创建并保留，但尚未开始上传。请点击“检查并上传已有提交”重新完成安全复检；不会重复创建提交。", true);
+            }
+            else
+            {
+                ShowMessageRequested?.Invoke(
+                    result.Pushed ? "发布完成：已提交并推送。" :
+                    result.Committed && !result.CommitCreatedButUnverified && string.IsNullOrEmpty(result.Error) ? "提交完成（未推送）。" :
+                    result.Error ?? "发布失败。",
+                    !(result.Pushed || (result.Committed && !result.CommitCreatedButUnverified && string.IsNullOrEmpty(result.Error))));
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1228,6 +1290,279 @@ public sealed class MainViewModel : ViewModelBase
             await RunChecksAsync(allowOperationLease: true);
         }
     }
+
+    /// <summary>
+    /// 检查并上传当前分支已有的本地提交。该流程不复用普通工作区 Gate，
+    /// 也不调用 add/commit；准备与执行安全判断全部由 PublishWorkflowService 负责。
+    /// </summary>
+    private async Task PushExistingCommitAsync()
+    {
+        if (!CanPushExistingCommit) return;
+        var root = LastContext?.RepositoryRoot;
+        if (string.IsNullOrWhiteSpace(root)) return;
+        var projectPathAtStart = ProjectPath?.Trim() ?? string.Empty;
+
+        SetOperationLease(true);
+        string? finalSummary = null;
+        try
+        {
+            var prepareToken = StartOperation("正在检查已有提交…");
+            ExistingPushPlan? plan = null;
+            var buildTarget = _settings.BuildBeforeCommit ? BuildTargetResolver.Resolve(root) : null;
+            var requireBuildVerification = _settings.BuildBeforeCommit && buildTarget?.Kind != BuildTargetKind.None;
+            var buildDisplay = !_settings.BuildBeforeCommit
+                ? "根据设置跳过构建（仅上传已有提交）"
+                : buildTarget?.Kind == BuildTargetKind.None
+                    ? "未发现 .NET 构建目标，按项目类型跳过构建"
+                    : "尚未完成当前 HEAD 构建验证";
+            try
+            {
+                string? buildVerifiedCommitOid = null;
+                if (requireBuildVerification)
+                {
+                    // 仅当工作区完全干净时，隔离构建的输入才能证明对应当前 HEAD。
+                    // 不复用普通预检的旧 Build，也不把含未跟踪文件的工作区构建冒充提交证明。
+                    var statusBefore = await _git.StatusPorcelainAsync(root, prepareToken);
+                    if (!statusBefore.Success)
+                    {
+                        finalSummary = "构建前无法确认工作区状态，已禁止上传已有提交。";
+                        Log(LogLevel.Blocked, $"读取构建前工作区状态失败：{GitRemoteService.RedactOutput(statusBefore.StdErrText)}");
+                        ShowMessageRequested?.Invoke(finalSummary, true);
+                        return;
+                    }
+                    if (GitRepositoryInspector.ParseStatusPorcelain(statusBefore.Stdout).Count > 0)
+                    {
+                        finalSummary = "当前还有未提交变更，无法证明构建结果属于已有提交。";
+                        Log(LogLevel.Blocked, finalSummary);
+                        ShowMessageRequested?.Invoke("当前工作区包含已修改、已暂存或未跟踪的文件。请先处理这些变更，再检查并上传已有提交；本工具不会把工作区构建结果冒充当前 HEAD 的构建证明。", true);
+                        return;
+                    }
+
+                    var headBeforeResult = await _git.HeadOidResultAsync(root, prepareToken);
+                    var headBefore = headBeforeResult.Success ? headBeforeResult.Stdout.FirstOrDefault()?.Trim() : null;
+                    if (!IsFullObjectId(headBefore))
+                    {
+                        finalSummary = "无法锁定当前完整提交 OID，已禁止上传已有提交。";
+                        Log(LogLevel.Blocked, finalSummary);
+                        ShowMessageRequested?.Invoke(finalSummary, true);
+                        return;
+                    }
+
+                    BusyText = "正在构建当前 HEAD…";
+                    Log(LogLevel.Info, $"当前设置要求构建验证，正在对已有提交 {headBefore![..8]} 执行隔离构建…");
+                    var build = await _buildService.BuildRepositoryAsync(root, false, prepareToken);
+                    if (!build.BuildRun || !build.Succeeded)
+                    {
+                        buildDisplay = build.BuildRun ? "FAIL" : build.SkipReason;
+                        finalSummary = "当前 HEAD 未通过构建验证，已禁止上传已有提交。";
+                        Log(LogLevel.Blocked, $"已有提交构建验证未通过：{buildDisplay}");
+                        ShowMessageRequested?.Invoke("当前设置要求提交前构建，但已有提交没有获得有效的构建通过证明，因此没有上传。请先修复构建问题或明确调整设置后重新检查。", true);
+                        return;
+                    }
+
+                    var headAfterResult = await _git.HeadOidResultAsync(root, prepareToken);
+                    var headAfter = headAfterResult.Success ? headAfterResult.Stdout.FirstOrDefault()?.Trim() : null;
+                    var statusAfter = await _git.StatusPorcelainAsync(root, prepareToken);
+                    if (!IsFullObjectId(headAfter)
+                        || !string.Equals(headBefore, headAfter, StringComparison.Ordinal)
+                        || !statusAfter.Success
+                        || GitRepositoryInspector.ParseStatusPorcelain(statusAfter.Stdout).Count > 0)
+                    {
+                        finalSummary = "构建期间 HEAD 或工作区发生变化，构建证明已失效。";
+                        Log(LogLevel.Blocked, finalSummary);
+                        ShowMessageRequested?.Invoke("构建期间提交或工作区发生了变化。为避免上传未经验证的内容，本次已停止；请重新检查已有提交。", true);
+                        return;
+                    }
+
+                    buildVerifiedCommitOid = headAfter;
+                    buildDisplay = build.WarningCount == 0
+                        ? $"PASS（{build.Duration.TotalSeconds:F1}s，绑定 {headAfter![..8]}）"
+                        : $"PASS（{build.WarningCount} warnings，绑定 {headAfter![..8]}）";
+                    Log(build.WarningCount == 0 ? LogLevel.Pass : LogLevel.Warn, $"已有提交隔离构建通过：{buildDisplay}");
+                }
+
+                Log(LogLevel.Info, "开始检查已有提交、分支、远端目标和待推送历史…");
+                plan = await _publish.PrepareExistingPushAsync(new ExistingPushPrepareRequest
+                {
+                    RepositoryRoot = root,
+                    RequireImageConfirmation = _settings.RequireImagePrivacyConfirmation,
+                    RequireBuildVerification = requireBuildVerification,
+                    BuildVerifiedCommitOid = buildVerifiedCommitOid
+                }, Log, prepareToken);
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyText = string.Empty;
+            }
+
+            if (plan == null) return;
+            if (!plan.CanExecute
+                || string.IsNullOrWhiteSpace(plan.CommitOid)
+                || string.IsNullOrWhiteSpace(plan.RemoteTargetFingerprint))
+            {
+                var (summary, userMessage, isError) = DescribeExistingPushPlan(plan);
+                finalSummary = summary;
+                Log(isError ? LogLevel.Blocked : LogLevel.Info, plan.Message);
+                ShowMessageRequested?.Invoke(userMessage, isError);
+                return;
+            }
+
+            finalSummary = $"已找到 {plan.OutgoingCommitCount} 个待推送提交：{plan.Branch} · {plan.CommitShortHash} → {plan.RemoteDisplay}";
+            ExistingCommitRecoverySummary = finalSummary;
+            var confirmData = BuildExistingPushConfirmData(plan, buildDisplay);
+            if (ConfirmPublishRequested == null || !await ConfirmPublishRequested(confirmData))
+            {
+                finalSummary = "已取消上传；本地提交未改变。需要时可重新检查并上传。";
+                Log(LogLevel.Info, "用户取消上传已有提交；未执行 Push。");
+                return;
+            }
+
+            // 全局租约会阻止正常 UI 改变项目；仍检查一次 VM 目标，防程序化路径切换绕过界面门禁。
+            if (!string.Equals(LastContext?.RepositoryRoot, plan.RepositoryRoot, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(ProjectPath?.Trim(), projectPathAtStart, StringComparison.OrdinalIgnoreCase))
+            {
+                finalSummary = "项目或仓库状态已变化，请重新检查已有提交。";
+                Log(LogLevel.Blocked, finalSummary);
+                ShowMessageRequested?.Invoke(finalSummary, true);
+                return;
+            }
+
+            var executeToken = StartOperation("正在上传已有提交…");
+            PublishResult result;
+            try
+            {
+                result = await _publish.ExecuteExistingPushAsync(new ExistingPushExecuteRequest
+                {
+                    PlanId = plan.PlanId!,
+                    CommitOid = plan.CommitOid!,
+                    RemoteTargetFingerprint = plan.RemoteTargetFingerprint,
+                    RequireImageConfirmation = _settings.RequireImagePrivacyConfirmation,
+                    RequireBuildVerification = requireBuildVerification,
+                    // 本次对话框的新确认严格绑定一次性计划；不读取主界面的旧图片确认。
+                    ImageConfirmed = confirmData.ImageConfirmed
+                }, Log, executeToken);
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyText = string.Empty;
+            }
+
+            var (resultSummary, resultMessage, resultError) = DescribeExistingPushResult(result);
+            finalSummary = resultSummary;
+            if (!string.IsNullOrWhiteSpace(result.Error))
+            {
+                // 服务返回的详情已脱敏；保留在日志供诊断，弹窗只显示自然语言操作指引。
+                Log(resultError ? LogLevel.Error : LogLevel.Info, result.Error);
+            }
+            else
+            {
+                Log(resultError ? LogLevel.Error : LogLevel.Pass, resultMessage);
+            }
+            ShowMessageRequested?.Invoke(resultMessage, resultError);
+        }
+        catch (OperationCanceledException)
+        {
+            finalSummary = "检查或上传已取消；本地提交未改变。再次上传前请重新检查。";
+            Log(LogLevel.Info, finalSummary);
+        }
+        catch (Exception ex)
+        {
+            finalSummary = "检查已有提交时发生异常，未执行盲目上传。请稍后重新检查。";
+            Log(LogLevel.Error, $"检查并上传已有提交失败：{ex.Message}");
+            ShowMessageRequested?.Invoke(finalSummary, true);
+        }
+        finally
+        {
+            IsBusy = false;
+            BusyText = string.Empty;
+            try
+            {
+                await RunChecksAsync(allowOperationLease: true);
+                if (!string.IsNullOrWhiteSpace(finalSummary)) ExistingCommitRecoverySummary = finalSummary;
+            }
+            finally
+            {
+                // 即使收尾预检自身异常，也不能把全局租约永久留在活动状态。
+                SetOperationLease(false);
+            }
+        }
+    }
+
+    /// <summary>把一次性已有提交计划映射为只读确认页；安全判断仍由服务所有。</summary>
+    private ConfirmPublishData BuildExistingPushConfirmData(ExistingPushPlan plan, string buildDisplay) => new()
+    {
+        RepositoryRoot = plan.RepositoryRoot,
+        ProjectPath = ProjectPath,
+        RepoDisplay = new DirectoryInfo(plan.RepositoryRoot).Name,
+        Branch = plan.Branch,
+        RemoteDisplay = "origin",
+        PushUrlDisplay = plan.RemoteDisplay,
+        AuthorDisplay = "-",
+        CommitMessage = "只上传已有提交，不会再次 add 或 commit",
+        CommitOidDisplay = plan.CommitOid ?? "-",
+        ChangeCount = 0,
+        OutgoingCommitCount = plan.OutgoingCommitCount,
+        PassCount = 0,
+        WarningCount = 0,
+        BlockedCount = 0,
+        ImageConfirmed = false,
+        HasNewImages = plan.HasOutgoingImages,
+        RequiresImageConfirmation = plan.RequiresImageConfirmation,
+        BuildDisplay = buildDisplay,
+        WillSetUpstream = false,
+        CommitOnly = false,
+        PushExistingOnly = true
+    };
+
+    private static (string Summary, string UserMessage, bool IsError) DescribeExistingPushPlan(ExistingPushPlan plan)
+    {
+        return plan.Disposition switch
+        {
+            ExistingPushDisposition.AlreadyUploaded =>
+                ("远端已经包含当前提交，无需重复上传。", "远端已经包含当前提交，无需重复上传。", false),
+            ExistingPushDisposition.NoLocalCommit =>
+                ("当前仓库还没有可上传的本地提交。", "当前仓库还没有可上传的本地提交。", false),
+            ExistingPushDisposition.Unknown =>
+                ("暂时无法确认远端状态，未执行上传。网络恢复后可再次检查。", NetworkRecoveryMessage(), true),
+            ExistingPushDisposition.DetachedHead =>
+                ("当前不在明确分支上，已禁止上传已有提交。", "当前处于 detached HEAD，无法安全确定目标分支，因此没有上传。", true),
+            ExistingPushDisposition.RemoteDrift =>
+                ("本地与远端历史不一致，需要人工处理。", "本地与远端历史已经分叉或发生变化，本工具不会自动合并、重置或强制上传。", true),
+            ExistingPushDisposition.Blocked =>
+                ("已有提交未通过安全复检，已禁止上传。", "待推送历史未通过安全复检，已禁止上传。请查看日志中的脱敏详情。", true),
+            _ => (plan.Message, plan.Message, true)
+        };
+    }
+
+    private static (string Summary, string UserMessage, bool IsError) DescribeExistingPushResult(PublishResult result)
+    {
+        return result.PushState switch
+        {
+            PushDeliveryState.Pushed =>
+                ("已有提交已安全上传。", "上传完成：已有提交已推送到远端，没有创建新提交。", false),
+            PushDeliveryState.AlreadyUploaded =>
+                ("远端已包含该提交，无需重复上传。", "远端已包含该提交，本次没有重复 Push，也没有创建新提交。", false),
+            PushDeliveryState.Unknown =>
+                ("远端接收结果暂时无法确认；请重新检查，勿直接重复上传。", NetworkRecoveryMessage(), true),
+            PushDeliveryState.Blocked =>
+                ("仓库或远端状态发生变化，已安全阻止上传。", "确认后仓库、分支、远端目标、远端状态或安全策略发生了变化，因此没有上传。请重新点击“检查并上传已有提交”。", true),
+            PushDeliveryState.Pending =>
+                ("已有提交仍保留在本地，尚未上传成功。", "上传没有完成。本地提交仍然保留，且没有创建重复提交。请查看日志中的脱敏详情，再点击“检查并上传已有提交”重新复检。", true),
+            _ =>
+                ("已有提交没有上传；请查看日志后重新检查。", "已有提交没有上传，且本地提交未被重复创建。请查看日志中的脱敏详情后重新检查。", true)
+        };
+    }
+
+    private static string NetworkRecoveryMessage() =>
+        "暂时无法确认远端是否已收到提交，因此没有盲目重试。\n\n" +
+        "浏览器能打开 GitHub，不代表 git.exe 使用相同的网络路径；本地提交不会重复创建。" +
+        "网络恢复后，请点击“检查并上传已有提交”。";
+
+    /// <summary>仅接受 Git 完整 SHA-1/SHA-256 对象 ID，短哈希不能作为构建或上传绑定依据。</summary>
+    private static bool IsFullObjectId(string? oid) =>
+        oid is { Length: 40 or 64 } && oid.All(Uri.IsHexDigit);
 
     private ConfirmPublishData BuildConfirmData(bool commitOnly, string msg)
     {

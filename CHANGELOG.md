@@ -7,7 +7,8 @@
 - 扫描安全：Secret 支持 UTF-8/GB18030/UTF-16/UTF-32 BOM、>2MiB 文本与无扩展名；读取 index/outgoing Git blob 原始字节；不按 `.png/.dll` 扩展名盲信跳过；扫描/临时文件清理不完整均失败关闭；明文 High 凭据统一硬阻断；>100MiB 始终硬阻断。
 - UI：提交类型中文显示但内部保留 Conventional Commits 前缀；最终确认页可完成当前图片指纹的脱敏确认；确认页显示脱敏 Push URL；Git 错误输出进入 UI/日志前脱敏。
 - 自扫描修复（2026-08-13）：对抗测试中的 GitHub Token 样本改为运行时分段生成，源码不再保存完整凭据或敏感赋值形态；发布说明中的内网地址/凭据示例改为抽象描述；扫描规则未放宽，断言收紧为必须命中 `ghp / Blocked`；新增安全测试源码与发布说明自扫描防复发用例。
-- 验证：Debug/Release 均 0 Warning / 0 Error；不启动 GUI/Git 的纯测试 139/139（339 assertions）；XAML XML 解析通过。本轮未运行 E2E、GUI 冒烟、真实 Git 提交/Push，未创建 Tag/Release。
+- Push 网络中断恢复（2026-08-13）：常规“安全提交并上传”在 add/commit 前先探测精确 origin；失败时不再先制造本地提交。新增独立“检查并上传已有提交”，绑定完整 OID、分支、Remote 指纹、Build 证明和图片确认，只上传既有提交，不重复 add/commit；Push 启动后的取消、超时或核验失败统一标记为 Unknown，恢复前必须先 reconcile 远端状态。
+- 验证：Debug/Release 均 0 Warning / 0 Error；不启动 GUI/Git/网络的纯测试 149/149（442 assertions）；XAML XML 解析通过。本轮未运行 E2E、GUI 冒烟、真实 Git 提交/Push，未创建 Tag/Release。
 
 ## v1.0.0（2026-08-07，已真实自发布到 GitHub）
 

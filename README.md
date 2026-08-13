@@ -28,7 +28,7 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 - 提交流程最终闸门：`git add --all` 后从 index Git blob 原始字节复扫；中止时恢复操作前 index tree，不清空用户原有部分暂存。
 - 已扫描 index tree 与实际 commit tree 必须一致；hook 在扫描后改写暂存内容会禁止成功回包与 Push。Push 前还会扫描真实待推送历史。
 - 危险命令黑名单（force push / rebase / reset --hard / clean -fd / filter-repo / branch -D / restore / checkout -- . 等）**绝不自动执行**。
-- Push 使用两次校验的精确 origin push URL 和 `HEAD:refs/heads/<branch>`；同步远端仅使用 `git pull --ff-only`，从不自动 merge。
+- “安全提交并上传”会在任何暂存/提交前先用 git.exe 探测精确 origin 的远端分支；网络或认证路径不可用时不会先制造本地提交。真正 Push 固定使用已锁定的完整提交 OID：`<full-oid>:refs/heads/<branch>`；同步远端仅使用 `git pull --ff-only`，从不自动 merge。
 - 所有 Secret 输出统一脱敏（保留公开前缀 + **** + 末尾 4 位），日志与界面永不出现凭据原文。
 
 ## 二、界面功能
@@ -37,7 +37,8 @@ SafeGitPublisher 是 Windows 桌面版 "GitHub 安全发布助手"，用于在�
 - 12 项检查结果列表（✅/⚠/🚫 + 颜色）+ 一键修复按钮
 - 变更文件列表（状态/大小/风险）与详细报告对话框
 - 提交类型中文显示（新增功能/问题修复/文档更新/代码重构/日常维护/测试调整），内部仍使用 feat:/fix:/docs:/refactor:/chore:/test:
-- 两个发布按钮：**仅提交** / **安全提交并上传**，均带最终确认页
+- 两个常规发布按钮：**仅提交** / **安全提交并上传**，均带最终确认页
+- 独立恢复入口：**检查并上传已有提交**。用于“本地提交已成功，但网络中断导致尚未 Push”的现场；它只核对并上传锁定的已有提交，不会再次暂存或重复 commit
 - 首次发布向导：git init → .gitignore → 作者身份 → 设置 origin（勾选时）→ 完整检查 → 最终确认 → 发布
 - 设置对话框（大文件阈值、构建开关、图片确认开关、推荐作者）
 
@@ -51,7 +52,7 @@ E:\SafeGitPublisher
 │  ├─ Services\                    # 进程/ Git / 扫描 / 检查 / 发布服务
 │  ├─ ViewModels\                  # MVVM
 │  └─ Views\                       # 主窗口 + 对话框（XAML 可视化界面）
-├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（当前 139 项）
+├─ tests\SafeGitPublisher.Tests    # 零依赖控制台单测（当前 149 项）
 └─ tests\SafeGitPublisher.E2E      # 真实 git 临时仓库端到端测试（31 项）
 ```
 
@@ -77,13 +78,14 @@ dotnet run --project "E:\SafeGitPublisher\src\SafeGitPublisher\SafeGitPublisher.
 
 `%LOCALAPPDATA%\SafeGitPublisher\settings.json`（不写入程序目录）。
 
-## 六、当前验证结果（2026-08-12，V1.0.1 安全加固）
+## 六、当前验证结果（2026-08-13，V1.0.1 安全加固）
 
-- 纯单元/静态合同测试：139/139 通过（339 assertions）；本轮显式排除 `GuiSmokeHost`，保证不启动 GUI 或 Git 进程；包含安全测试源码自扫描防复发用例。
+- 纯单元/静态合同测试：149/149 通过（442 assertions）；本轮显式排除 `GuiSmokeHost`、`DialogSmokeTests`、`GuiStartupSmoke`，保证不启动 GUI 或 Git 进程；包含安全测试源码自扫描与“已有提交仅上传”防复发合同。
 - 历史 E2E 基线：31/31（2026-08-08）；本轮因未获得 Git 调用授权，未重跑 E2E，不把历史结果冒充当前验证。
 - Debug 构建：0 Warning / 0 Error
 - Release 构建：0 Warning / 0 Error；ProductVersion=1.0.1 / FileVersion=1.0.1.0
 - XAML XML 静态解析通过；本轮未启动 GUI，中文前缀下拉框、最终确认页图片勾选仍待用户目视确认。
+- **Push 网络中断恢复（2026-08-13）**：常规提交并上传新增 commit 前远端探测；已产生本地提交但 Push 未开始/结果未知时，主界面提供“检查并上传已有提交”。恢复流程锁定完整 OID、分支和脱敏 Remote 指纹，重新核对远端状态及安全 Gate，只上传既有提交，绝不再次 add/commit；取消、超时或远端结果无法确认时保持 Unknown 并要求先核对，禁止盲目重复 Push。
 - **V1.0.1 external dogfooding（首个外部真实验收：DeepSeekBalanceTray）**：
   - SGP-UI-001：`.gitignore 预览`按钮不可见 → 根因：构造函数 `Content = data.NewContent` 把 Window.Content（含按钮的整个 XAML 根 Grid）整体替换为纯文本。修复：改写入 `ContentBox.Text`；布局加固（内容区 * 行 MinHeight=200、按钮行 Auto MinHeight=44、窗口 MinWidth/MinHeight=620/460、内容区可滚动、按钮加 x:Name）。取消/应用保持 isReadOnly 只追加合同。
   - SGP-UI-002：`PUBLISH BLOCKED` 显示"存在 0 项阻断问题"根因：Detail 用 `report.BlockedCount`，而 Banner 变红可能由 Warning 级但 BlocksPush=true（未配置 origin）触发。修复：新增 `PublishBannerEvaluator.BlockedDetail()`——真实 Blocked=N → "存在 N 项阻断问题"；无 Blocked 但 Push 硬拦截 → "存在 N 项需处理问题，当前无法发布"，绝不显示"0 项"。ReviewRequired 文案同步进纯函数。
@@ -115,3 +117,4 @@ dotnet run --project "E:\SafeGitPublisher\src\SafeGitPublisher\SafeGitPublisher.
 - 构建检查只支持 .NET 项目（识别 csproj/sln）；其他语言项目显示"跳过构建"。
 - 危险命令（force push、rebase、reset --hard 等）不提供自动化执行入口。
 - 不管理 Token 凭据、不调用 GitHub REST API（Push 由 git.exe 完成，是否输入账号密码由 git 自身凭据管理器处理）。
+- 浏览器能打开 GitHub 不代表 git.exe 使用相同的代理、VPN 或网络路径；本工具会安全阻断并保留恢复入口，但不会擅自修改系统/Git 代理或网络配置。
